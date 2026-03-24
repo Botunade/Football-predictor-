@@ -1,0 +1,7 @@
+pandas
+requests
+beautifulsoup4
+scikit-learn
+xgboost
+python-telegram-bot
+python-dotenv
