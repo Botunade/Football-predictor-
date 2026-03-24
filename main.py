@@ -39,11 +39,7 @@ def format_telegram_message(results):
     Formats prediction results for Telegram.
     Input: results = list of dicts, each containing:
         - match
-        - odds_home
-        - odds_away
-        - model_prob
-        - implied_prob
-        - value
+        - markets (dict of market results)
     Output: formatted string ready to send via bot.send_message
     """
     if not results:
@@ -53,9 +49,12 @@ def format_telegram_message(results):
 
     for i, r in enumerate(results, start=1):
         message += f"*{i}. Match:* {r['match']}\n"
-        message += f"• Odds H/A: {r['odds_home']} / {r['odds_away']}\n"
-        message += f"• Model Prob: {r['model_prob']:.2%} | Implied Prob: {r['implied_prob']:.2%}\n"
-        message += f"• Value: {r['value']:.2%}\n"
+        for market_name, data in r['markets'].items():
+            if data['value'] > 0.08:
+                message += f"• *Market:* {market_name.upper()}\n"
+                message += f"  • Model Prob: {data['model_probability']:.2%} | Implied Prob: {data['implied_probability']:.2%}\n"
+                message += f"  • Value: {data['value']:.2%}\n"
+
         message += f"• Betting Code: `{r['match'].replace(' ', '_').upper()}`\n\n"
 
     message += "✅ Data source: APIs + Scraping + OddsAPI\n"
@@ -96,15 +95,13 @@ async def run_version3_pipeline(league_id, season):
         features = match.to_dict()
         prediction = predict_match(features)
 
-        # Threshold for high-confidence/value bet
-        if prediction["value"] > 0.08:
+        # Check if any market has high value
+        has_value = any(m['value'] > 0.08 for m in prediction.values())
+
+        if has_value:
             results.append({
                 "match": f"{features['home_team']} vs {features['away_team']}",
-                "odds_home": features.get("odds_home"),
-                "odds_away": features.get("odds_away"),
-                "model_prob": prediction["model_probability"],
-                "implied_prob": prediction["implied_probability"],
-                "value": prediction["value"]
+                "markets": prediction
             })
 
     # 6. Send results to Telegram
@@ -147,6 +144,16 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         await update.message.reply_text(f"⏳ Analyzing *{home_team} vs {away_team}*...", parse_mode='Markdown')
 
+        # Try to parse optional extra markets from the text
+        # If the input has more than 4 parts, we can look for BTTS/O2.5 odds
+        # For simplicity, we assume the format could be: Match | H | D | A | BTTS_YES | O2.5
+        odds_btts = None
+        odds_o25 = None
+        if len(parts) >= 5:
+            odds_btts = float(parts[4])
+        if len(parts) >= 6:
+            odds_o25 = float(parts[5])
+
         # Create a single match result for prediction
         # In a real scenario, we'd fetch actual team data from our pipeline here
         # For now, we'll use our build_features/predict_matches modular flow
@@ -176,18 +183,16 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             "is_derby": 0,
             "odds_home": odds_h,
             "odds_draw": odds_d,
-            "odds_away": odds_a
+            "odds_away": odds_a,
+            "odds_btts": odds_btts,
+            "odds_over_25": odds_o25
         }
 
         prediction = predict_match(features)
 
         result = {
             "match": f"{home_team} vs {away_team}",
-            "odds_home": odds_h,
-            "odds_away": odds_a,
-            "model_prob": prediction["model_probability"],
-            "implied_prob": prediction["implied_probability"],
-            "value": prediction["value"]
+            "markets": prediction
         }
 
         message = format_telegram_message([result])

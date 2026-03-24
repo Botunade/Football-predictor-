@@ -34,10 +34,20 @@ def fetch_fixtures(league_id, season):
         print(f"Error fetching fixtures: {e}")
         return []
 
+# Cache for Understat scraping
+SCRAPE_CACHE = {}
+
 def scrape_understat_team(team_name, season):
     """
-    Scrape advanced stats from Understat for a team.
+    Scrape advanced stats from Understat for a team with retry and cache.
     """
+    cache_key = f"{team_name}_{season}"
+    if cache_key in SCRAPE_CACHE:
+        # Check if cache is fresh (less than 12 hours)
+        data, timestamp = SCRAPE_CACHE[cache_key]
+        if time.time() - timestamp < 12 * 3600:
+            return data
+
     # Basic mapping for known differences
     mapping = {
         "Manchester United": "Manchester_United",
@@ -52,45 +62,68 @@ def scrape_understat_team(team_name, season):
     search_name = mapping.get(team_name, team_name.replace(" ", "_"))
     url = f"https://understat.com/team/{search_name}/{season}"
 
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            # Understat stores data in script tags as JSON strings
-            import re
-            import json
-            scripts = soup.find_all('script')
-            for s in scripts:
-                if 'statisticsData' in s.string:
-                    json_text = re.search(r"JSON\.parse\('(.+?)'\)", s.string).group(1)
-                    # Handle escapes in the JSON string
-                    json_text = json_text.encode('utf-8').decode('unicode_escape')
-                    data = json.loads(json_text)
-                    # Extract some metrics (this is a simplified example)
-                    # Real Understat data structure is deep
-                    return {
-                        "xG": data.get("xG", 1.5),
-                        "xGA": data.get("xGA", 1.2),
-                        "xGD": data.get("xG", 1.5) - data.get("xGA", 1.2),
-                        "NPxG": data.get("npxG", 1.4),
-                        "PPDA": data.get("ppda", 10.5),
-                        "possession": 50.0
-                    }
-    except Exception as e:
-        print(f"Scraping error for {team_name}: {e}")
+    for attempt in range(3): # 3 retry attempts
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Understat stores data in script tags as JSON strings
+                import re
+                import json
+                scripts = soup.find_all('script')
+                for s in scripts:
+                    if s.string and 'statisticsData' in s.string:
+                        json_text = re.search(r"JSON\.parse\('(.+?)'\)", s.string).group(1)
+                        # Handle escapes in the JSON string
+                        json_text = json_text.encode('utf-8').decode('unicode_escape')
+                        data = json.loads(json_text)
+                        # Extract some metrics (this is a simplified example)
+                        # Real Understat data structure is deep
+                        result = {
+                            "xG": data.get("xG", 1.5),
+                            "xGA": data.get("xGA", 1.2),
+                            "xGD": data.get("xG", 1.5) - data.get("xGA", 1.2),
+                            "NPxG": data.get("npxG", 1.4),
+                            "PPDA": data.get("ppda", 10.5),
+                            "possession": 50.0
+                        }
+                        SCRAPE_CACHE[cache_key] = (result, time.time())
+                        return result
+
+            # If not found in scripts, wait and retry
+            time.sleep(2)
+        except Exception as e:
+            print(f"Scraping error for {team_name} (Attempt {attempt+1}): {e}")
+            time.sleep(2)
 
     # Fallback to defaults if scraping fails
     return {
         "xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 50.0
     }
 
-def fetch_player_info(team_id):
-    """Fetch injury, fatigue, and dependency metrics."""
-    # Mock data for injuries and fatigue
+def fetch_player_info(team_id, league_id=39, season=2024):
+    """Fetch injury, fatigue, and dependency metrics from API-Football."""
+    # 1. Fetch injuries
+    injuries_url = f"{BASE_URL_FOOTBALL}/injuries"
+    injuries_params = {"team": team_id, "league": league_id, "season": season}
+
+    injury_count = 0
+    try:
+        resp = requests.get(injuries_url, headers=HEADERS_FOOTBALL, params=injuries_params, timeout=10)
+        injuries_data = resp.json().get("response", [])
+        injury_count = len(injuries_data)
+    except Exception as e:
+        print(f"Error fetching injuries for team {team_id}: {e}")
+
+    # 2. Fetch player stats for fatigue (example: minutes played in last 5 games)
+    # This is a simplified version; real fatigue index would be more complex
+    # Mocking the calculation for now but providing the structure
+    fatigue_index = min(injury_count * 0.1, 1.0) # Placeholder logic
+
     return {
-        "injury_index": 0.1,  # 0 to 1 scale
-        "fatigue_index": 0.2,
-        "key_player_dependency": 0.5
+        "injury_index": min(injury_count / 11.0, 1.0), # Ratio to full squad
+        "fatigue_index": fatigue_index,
+        "key_player_dependency": 0.5 # Default
     }
 
 def fetch_odds(sport="soccer_epl", regions="uk"):
@@ -152,12 +185,14 @@ def build_features(fixture):
     away_id = fixture["teams"]["away"]["id"]
     home_name = fixture["teams"]["home"]["name"]
     away_name = fixture["teams"]["away"]["name"]
+    league_id = fixture["league"]["id"]
+    season = fixture["league"]["season"]
 
-    home_stats = scrape_understat_team(home_name, fixture["league"]["season"])
-    away_stats = scrape_understat_team(away_name, fixture["league"]["season"])
+    home_stats = scrape_understat_team(home_name, season)
+    away_stats = scrape_understat_team(away_name, season)
 
-    home_players = fetch_player_info(home_id)
-    away_players = fetch_player_info(away_id)
+    home_players = fetch_player_info(home_id, league_id, season)
+    away_players = fetch_player_info(away_id, league_id, season)
 
     context = compute_context(fixture)
 
