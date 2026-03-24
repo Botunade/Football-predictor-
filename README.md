@@ -2,8 +2,13 @@
 
 A professional-grade automated betting analysis system that identifies high-value opportunities across Football, Basketball, and Hockey. Integrated with Telegram for real-time analysis via manual match input or SportyBet booking codes.
 
+This repository includes two versions:
+1. **Full Version (`main.py`)**: Uses XGBoost and Pandas for heavy-duty analysis.
+2. **Lite Version (`main_lite.py`)**: Optimized for Termux (no pandas/compilation required).
+
 ## 🌟 Key Features
 
+- **Lite Mode for Termux:** Runs flawlessly on mobile via Termux using only native Python structures and Selenium.
 - **Multi-Sport Support:** Optimized pipelines for Football (Premier League, etc.), Basketball (NBA), and Hockey (NHL).
 - **Playwright Booking Reader:** Automatically extracts matches and odds from SportyBet Nigeria using a simple booking code.
 - **Automated Data Pipeline:**
@@ -36,9 +41,8 @@ A professional-grade automated betting analysis system that identifies high-valu
    ```
 
 2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+   - For VPS/Linux: `pip install -r requirements.txt`
+   - For Termux: `pip install -r requirements_lite.txt`
 
 3. **Install Playwright Browsers:**
    ```bash
@@ -54,9 +58,14 @@ A professional-grade automated betting analysis system that identifies high-valu
 
 ## 🚀 Usage
 
-Run the main orchestrator:
+**Full Version (VPS/Linux):**
 ```bash
 python main.py
+```
+
+**Lite Version (Termux):**
+```bash
+python main_lite.py
 ```
 
 ### Telegram Commands & Formats
