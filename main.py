@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # === IMPORT YOUR MODULES / SCRIPTS ===
 from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset, build_features
 from v3_prediction_model import predict_match
-from booking_extractor import extract_booking_code_data
+from extractor import extract_booking_code_data
 
 # === LOAD ENV VARS ===
 load_dotenv()
