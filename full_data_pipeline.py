@@ -184,9 +184,17 @@ def fetch_player_info(team_id, league_id=39, season=2024, sport="football"):
         "key_player_dependency": 0.5 # Default
     }
 
-def fetch_odds(sport="soccer_epl", regions="uk"):
-    """Fetch odds from OddsAPI."""
-    url = f"{BASE_URL_ODDS}/{sport}/odds"
+def fetch_odds(sport="football", league_id=39, regions="uk"):
+    """Fetch odds from OddsAPI with sport mapping."""
+    # OddsAPI sport mapping
+    mapping = {
+        "football": "soccer_epl", # Default to EPL, could be refined by league_id
+        "basketball": "basketball_nba",
+        "hockey": "icehockey_nhl"
+    }
+    odds_sport = mapping.get(sport, "soccer_epl")
+
+    url = f"{BASE_URL_ODDS}/{odds_sport}/odds"
     params = {
         "apiKey": ODDS_API_KEY,
         "regions": regions,
