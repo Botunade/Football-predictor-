@@ -18,13 +18,21 @@ HEADERS_FOOTBALL = {
     'x-rapidapi-key': API_FOOTBALL_KEY
 }
 
+def fetch_data(league_id, season):
+    """Alias for fetch_fixtures to match requested modularity."""
+    return fetch_fixtures(league_id, season)
+
 def fetch_fixtures(league_id, season):
     """Fetch upcoming fixtures for a league and season."""
     url = f"{BASE_URL_FOOTBALL}/fixtures"
     params = {"league": league_id, "season": season, "next": 50}
-    response = requests.get(url, headers=HEADERS_FOOTBALL, params=params)
-    data = response.json()
-    return data.get("response", [])
+    try:
+        response = requests.get(url, headers=HEADERS_FOOTBALL, params=params, timeout=10)
+        data = response.json()
+        return data.get("response", [])
+    except Exception as e:
+        print(f"Error fetching fixtures: {e}")
+        return []
 
 def scrape_understat_team(team_name, season):
     """
@@ -35,7 +43,11 @@ def scrape_understat_team(team_name, season):
         "Manchester United": "Manchester_United",
         "Manchester City": "Manchester_City",
         "Tottenham Hotspur": "Tottenham",
-        "Newcastle United": "Newcastle_United"
+        "Newcastle United": "Newcastle_United",
+        "Chelsea": "Chelsea",
+        "Arsenal": "Arsenal",
+        "Liverpool": "Liverpool",
+        "Leicester": "Leicester"
     }
     search_name = mapping.get(team_name, team_name.replace(" ", "_"))
     url = f"https://understat.com/team/{search_name}/{season}"
@@ -114,48 +126,65 @@ def fetch_odds(sport="soccer_epl", regions="uk"):
 
 def compute_context(fixture):
     """Compute contextual metrics like rest days, derby flag, etc."""
-    # Simplified placeholder
+    # Placeholders for more granular metrics
     return {
         "home_away_advantage": 1.1,
         "rest_days_diff": 0,
-        "is_derby": 0
+        "is_derby": 0,
+        "weather_impact": 0,
+        "pitch_quality": 1,
+        "travel_distance": 50, # km
+        "match_importance": 0.8 # 0 to 1
+    }
+
+def fetch_market_data(home_team, away_team):
+    """Fetch market signals like betting volume and sentiment."""
+    # Placeholder for OddsAPI or other specialized betting volume API
+    return {
+        "line_movement": 0.05,
+        "public_sentiment": 0.6, # 60% on home
+        "betting_volume": 1000000
+    }
+
+def build_features(fixture):
+    """Extract and build features for a single fixture."""
+    home_id = fixture["teams"]["home"]["id"]
+    away_id = fixture["teams"]["away"]["id"]
+    home_name = fixture["teams"]["home"]["name"]
+    away_name = fixture["teams"]["away"]["name"]
+
+    home_stats = scrape_understat_team(home_name, fixture["league"]["season"])
+    away_stats = scrape_understat_team(away_name, fixture["league"]["season"])
+
+    home_players = fetch_player_info(home_id)
+    away_players = fetch_player_info(away_id)
+
+    context = compute_context(fixture)
+
+    return {
+        "fixture_id": fixture["fixture"]["id"],
+        "home_team": home_name,
+        "away_team": away_name,
+        "home_xG": home_stats["xG"],
+        "away_xG": away_stats["xG"],
+        "home_xGA": home_stats["xGA"],
+        "away_xGA": away_stats["xGA"],
+        "home_xGD": home_stats["xGD"],
+        "away_xGD": away_stats["xGD"],
+        "home_ppda": home_stats["PPDA"],
+        "away_ppda": away_stats["PPDA"],
+        "home_injury": home_players["injury_index"],
+        "away_injury": away_players["injury_index"],
+        "home_fatigue": home_players["fatigue_index"],
+        "away_fatigue": away_players["fatigue_index"],
+        **context
     }
 
 def build_dataset(fixtures):
     """Merge all data sources into a single structured DataFrame."""
     rows = []
     for fix in fixtures:
-        home_id = fix["teams"]["home"]["id"]
-        away_id = fix["teams"]["away"]["id"]
-        home_name = fix["teams"]["home"]["name"]
-        away_name = fix["teams"]["away"]["name"]
-
-        home_stats = scrape_understat_team(home_name, fix["league"]["season"])
-        away_stats = scrape_understat_team(away_name, fix["league"]["season"])
-
-        home_players = fetch_player_info(home_id)
-        away_players = fetch_player_info(away_id)
-
-        context = compute_context(fix)
-
-        row = {
-            "fixture_id": fix["fixture"]["id"],
-            "home_team": home_name,
-            "away_team": away_name,
-            "home_xG": home_stats["xG"],
-            "away_xG": away_stats["xG"],
-            "home_xGA": home_stats["xGA"],
-            "away_xGA": away_stats["xGA"],
-            "home_xGD": home_stats["xGD"],
-            "away_xGD": away_stats["xGD"],
-            "home_ppda": home_stats["PPDA"],
-            "away_ppda": away_stats["PPDA"],
-            "home_injury": home_players["injury_index"],
-            "away_injury": away_players["injury_index"],
-            "home_fatigue": home_players["fatigue_index"],
-            "away_fatigue": away_players["fatigue_index"],
-            **context
-        }
+        row = build_features(fix)
         rows.append(row)
 
     return pd.DataFrame(rows)

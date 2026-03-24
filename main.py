@@ -4,7 +4,7 @@ import os
 import asyncio
 from datetime import datetime
 from telegram import Bot, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 
 # === IMPORT YOUR MODULES / SCRIPTS ===
@@ -115,7 +115,86 @@ async def run_version3_pipeline(league_id, season):
 
 # === TELEGRAM COMMAND HANDLERS ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 Football Predictor V3 is active!\nUse /predict <league_id> <season> to trigger an immediate run.")
+    if str(update.effective_chat.id) != CHAT_ID:
+        return
+    await update.message.reply_text(
+        "🚀 *Football Predictor V3* is active!\n\n"
+        "Send match data in this format to analyze:\n"
+        "`HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway`",
+        parse_mode='Markdown'
+    )
+
+async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle messages in the format: HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway"""
+    if str(update.effective_chat.id) != CHAT_ID:
+        return
+
+    text = update.message.text
+    try:
+        # Example input: Manchester United vs Liverpool | 2.50 | 3.40 | 2.80
+        parts = [p.strip() for p in text.split('|')]
+        if len(parts) != 4:
+            raise ValueError("Invalid format. Use: HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway")
+
+        teams = parts[0].split(' vs ')
+        if len(teams) != 2:
+            raise ValueError("Match must be in 'HomeTeam vs AwayTeam' format.")
+
+        home_team, away_team = teams[0].strip(), teams[1].strip()
+        odds_h = float(parts[1])
+        odds_d = float(parts[2])
+        odds_a = float(parts[3])
+
+        await update.message.reply_text(f"⏳ Analyzing *{home_team} vs {away_team}*...", parse_mode='Markdown')
+
+        # Create a single match result for prediction
+        # In a real scenario, we'd fetch actual team data from our pipeline here
+        # For now, we'll use our build_features/predict_matches modular flow
+        from full_data_pipeline import scrape_understat_team, fetch_player_info, compute_context
+
+        # Build features for this manual match
+        home_stats = scrape_understat_team(home_team, 2024)
+        away_stats = scrape_understat_team(away_team, 2024)
+
+        features = {
+            "home_team": home_team,
+            "away_team": away_team,
+            "home_xG": home_stats["xG"],
+            "away_xG": away_stats["xG"],
+            "home_xGA": home_stats["xGA"],
+            "away_xGA": away_stats["xGA"],
+            "home_xGD": home_stats["xGD"],
+            "away_xGD": away_stats["xGD"],
+            "home_ppda": home_stats["PPDA"],
+            "away_ppda": away_stats["PPDA"],
+            "home_injury": 0.1, # Default
+            "away_injury": 0.1,
+            "home_fatigue": 0.2,
+            "away_fatigue": 0.2,
+            "home_away_advantage": 1.1,
+            "rest_days_diff": 0,
+            "is_derby": 0,
+            "odds_home": odds_h,
+            "odds_draw": odds_d,
+            "odds_away": odds_a
+        }
+
+        prediction = predict_match(features)
+
+        result = {
+            "match": f"{home_team} vs {away_team}",
+            "odds_home": odds_h,
+            "odds_away": odds_a,
+            "model_prob": prediction["model_probability"],
+            "implied_prob": prediction["implied_probability"],
+            "value": prediction["value"]
+        }
+
+        message = format_telegram_message([result])
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -139,17 +218,25 @@ async def scheduler_task(league_id, season, interval):
         print(f"Sleeping {interval/3600} hours before next run...")
         await asyncio.sleep(interval)
 
-async def main():
-    # Build application
+def telegram_bot_handler():
+    """Build the application handler."""
     if not TELEGRAM_TOKEN:
         print("Error: No TELEGRAM_TOKEN found in environment.")
-        return
+        return None
 
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    return application
+
+async def main():
+    # Build application
+    application = telegram_bot_handler()
+    if not application:
+        return
 
     # Add handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("predict", predict_command))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
 
     # Start the scheduler as a background task
     LEAGUE_ID = 39

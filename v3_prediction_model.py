@@ -44,6 +44,10 @@ def train_model(X_train, y_train):
 
     return clf
 
+def predict_matches(matches_features):
+    """Predict multiple matches."""
+    return [predict_match(f) for f in matches_features]
+
 def predict_match(features):
     """
     Predict match outcome and calculate value.
