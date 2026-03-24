@@ -70,6 +70,20 @@ def fetch_fixtures(league_id, season, sport="football"):
     data = fetch_api_data(sport, "fixtures", params=params)
     return data.get("response", []) if data else []
 
+def fetch_fixture_statistics(sport, fixture_id):
+    """Fetch detailed statistics for a specific fixture."""
+    data = fetch_api_data(sport, "fixtures/statistics", params={"fixture": fixture_id})
+    return data.get("response", []) if data else []
+
+def fetch_team_form(sport, league_id, season, team_id):
+    """Fetch recent form statistics for a team."""
+    data = fetch_api_data(sport, "teams/statistics", params={
+        "league": league_id,
+        "season": season,
+        "team": team_id
+    })
+    return data.get("response", {}) if data else {}
+
 def scrape_advanced_stats(sport, match_name):
     """
     Automatically try multiple sites for advanced stats.
@@ -246,6 +260,9 @@ def fetch_market_data(home_team, away_team):
     }
 
 def build_features(fixture, sport="football", scraped_data=None):
+    """
+    Consolidated feature builder combining API data, scraped stats, and context.
+    """
     """Extract and build features for a single fixture for a given sport."""
     # API-Sports structure varies slightly by sport, but fixtures usually have teams
     try:
@@ -255,6 +272,11 @@ def build_features(fixture, sport="football", scraped_data=None):
         away_name = fixture["teams"]["away"]["name"]
         league_id = fixture["league"]["id"]
         season = fixture["league"]["season"]
+        fixture_id = fixture["fixture"]["id"]
+    except (KeyError, TypeError):
+        # Fallback for manual or incomplete API structures
+        home_name = fixture.get("home_team", fixture.get("home", "Home"))
+        away_name = fixture.get("away_team", fixture.get("away", "Away"))
     except KeyError:
         # Fallback for manual or different API structures
         home_name = fixture.get("home_team", "Home")
@@ -263,6 +285,76 @@ def build_features(fixture, sport="football", scraped_data=None):
         away_id = fixture.get("away_id", 0)
         league_id = fixture.get("league_id", 0)
         season = fixture.get("season", 2024)
+        fixture_id = fixture.get("fixture_id", 0)
+
+    # 1. Fetch Basic Team Stats/Form from API
+    home_api_stats = fetch_team_form(sport, league_id, season, home_id) if home_id else {}
+    away_api_stats = fetch_team_form(sport, league_id, season, away_id) if away_id else {}
+
+    # 2. Sport-Specific Advanced Data & Scraping
+    if sport == "football":
+        # Understat scraping
+        home_scraped = scrape_understat_team(home_name, season)
+        away_scraped = scrape_understat_team(away_name, season)
+
+        features = {
+            "home_xG": home_scraped.get("xG", 1.5),
+            "away_xG": away_scraped.get("xG", 1.5),
+            "home_xGA": home_scraped.get("xGA", 1.5),
+            "away_xGA": away_scraped.get("xGA", 1.5),
+            "home_ppda": home_scraped.get("PPDA", 10.0),
+            "away_ppda": away_scraped.get("PPDA", 10.0),
+            "home_possession": home_scraped.get("possession", 50.0),
+            "away_possession": away_scraped.get("possession", 50.0),
+        }
+    elif sport == "basketball":
+        features = {
+            "home_points_avg": 110.0, # Placeholder for API points
+            "away_points_avg": 108.0,
+            "home_efficiency": 0.55,
+            "away_efficiency": 0.52
+        }
+    else: # hockey
+        features = {
+            "home_goals_avg": 3.2,
+            "away_goals_avg": 2.8,
+            "home_saves_pct": 0.91,
+            "away_saves_pct": 0.89
+        }
+
+    # 3. Player Info (Injuries, Fatigue)
+    home_players = fetch_player_info(home_id, league_id, season, sport)
+    away_players = fetch_player_info(away_id, league_id, season, sport)
+
+    features.update({
+        "home_injury": home_players["injury_index"],
+        "away_injury": away_players["injury_index"],
+        "home_fatigue": home_players["fatigue_index"],
+        "away_fatigue": away_players["fatigue_index"]
+    })
+
+    # 4. Contextual Metrics (Rest, Derby, Weather)
+    context = compute_context(fixture)
+    features.update(context)
+
+    # 5. Market Data (Line movement, sentiment)
+    market = fetch_market_data(home_name, away_name)
+    features.update(market)
+
+    # 6. Override with any manual scraped_data
+    if scraped_data:
+        features.update(scraped_data)
+
+    # Final Meta Data
+    features.update({
+        "fixture_id": fixture_id,
+        "home_team": home_name,
+        "away_team": away_name,
+        "home_xGD": features.get("home_xG", 0) - features.get("home_xGA", 0),
+        "away_xGD": features.get("away_xG", 0) - features.get("away_xGA", 0)
+    })
+
+    return features
 
     if sport == "football":
         home_stats = scrape_understat_team(home_name, season)
