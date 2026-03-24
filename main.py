@@ -13,9 +13,19 @@ from v3_prediction_model import predict_match
 from extractor import extract_booking_code_data
 
 # === LOAD ENV VARS ===
-load_dotenv()
+# Explicitly load from .env for Termux compatibility
+load_dotenv(dotenv_path=".env", override=True)
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
+# Token Validation
+if not TELEGRAM_TOKEN or len(TELEGRAM_TOKEN) < 10:
+    print(f"❌ ERROR: Invalid or missing TELEGRAM_TOKEN in .env file.")
+    print(f"Current Value: '{TELEGRAM_TOKEN}'")
+    exit(1)
+
+print(f"DEBUG TOKEN: {TELEGRAM_TOKEN[:5]}...{TELEGRAM_TOKEN[-5:]}")
 
 # Initialize bot
 try:

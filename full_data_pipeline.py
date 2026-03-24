@@ -263,8 +263,6 @@ def build_features(fixture, sport="football", scraped_data=None):
     """
     Consolidated feature builder combining API data, scraped stats, and context.
     """
-    """Extract and build features for a single fixture for a given sport."""
-    # API-Sports structure varies slightly by sport, but fixtures usually have teams
     try:
         home_id = fixture["teams"]["home"]["id"]
         away_id = fixture["teams"]["away"]["id"]
@@ -277,10 +275,6 @@ def build_features(fixture, sport="football", scraped_data=None):
         # Fallback for manual or incomplete API structures
         home_name = fixture.get("home_team", fixture.get("home", "Home"))
         away_name = fixture.get("away_team", fixture.get("away", "Away"))
-    except KeyError:
-        # Fallback for manual or different API structures
-        home_name = fixture.get("home_team", "Home")
-        away_name = fixture.get("away_team", "Away")
         home_id = fixture.get("home_id", 0)
         away_id = fixture.get("away_id", 0)
         league_id = fixture.get("league_id", 0)
@@ -355,44 +349,6 @@ def build_features(fixture, sport="football", scraped_data=None):
     })
 
     return features
-
-    if sport == "football":
-        home_stats = scrape_understat_team(home_name, season)
-        away_stats = scrape_understat_team(away_name, season)
-    else:
-        # Basic stats for other sports from API fixtures if available
-        # Example: recent goals/points
-        home_stats = {"xG": 1.5, "xGA": 1.5, "xGD": 0, "PPDA": 10}
-        away_stats = {"xG": 1.5, "xGA": 1.5, "xGD": 0, "PPDA": 10}
-
-    # Add scraped_data if provided
-    if scraped_data:
-        home_stats.update(scraped_data.get("home", {}))
-        away_stats.update(scraped_data.get("away", {}))
-
-    home_players = fetch_player_info(home_id, league_id, season, sport)
-    away_players = fetch_player_info(away_id, league_id, season, sport)
-
-    context = compute_context(fixture)
-
-    return {
-        "fixture_id": fixture["fixture"]["id"],
-        "home_team": home_name,
-        "away_team": away_name,
-        "home_xG": home_stats["xG"],
-        "away_xG": away_stats["xG"],
-        "home_xGA": home_stats["xGA"],
-        "away_xGA": away_stats["xGA"],
-        "home_xGD": home_stats["xGD"],
-        "away_xGD": away_stats["xGD"],
-        "home_ppda": home_stats["PPDA"],
-        "away_ppda": away_stats["PPDA"],
-        "home_injury": home_players["injury_index"],
-        "away_injury": away_players["injury_index"],
-        "home_fatigue": home_players["fatigue_index"],
-        "away_fatigue": away_players["fatigue_index"],
-        **context
-    }
 
 def build_dataset(fixtures, sport="football"):
     """Merge all data sources into a single structured DataFrame for a given sport."""
