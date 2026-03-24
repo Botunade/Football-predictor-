@@ -3,10 +3,6 @@ import asyncio
 from telegram import Bot, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from verify_creds import verify_and_correct_creds
-
-# Auto-verify credentials before starting
-verify_and_correct_creds()
 
 from extractor_lite import extract_booking_code_data_lite
 from pipeline_lite import build_features_lite

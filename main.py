@@ -6,10 +6,6 @@ from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from verify_creds import verify_and_correct_creds
-
-# Auto-verify credentials before starting
-verify_and_correct_creds()
 
 # === IMPORT YOUR MODULES / SCRIPTS ===
 from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset, build_features
@@ -150,13 +146,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 pseudo_fixture = {
                     "home_team": match["home"],
                     "away_team": match["away"],
-                    "sport": match["sport"],
-                    "fixture": {"id": 0}, # Add dummy IDs to prevent KeyError in build_features
-                    "league": {"id": 0, "season": 2024},
-                    "teams": {
-                        "home": {"id": 0, "name": match["home"]},
-                        "away": {"id": 0, "name": match["away"]}
-                    }
+                    "sport": match["sport"]
                 }
 
                 # 2. Build features
