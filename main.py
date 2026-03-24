@@ -8,8 +8,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from dotenv import load_dotenv
 
 # === IMPORT YOUR MODULES / SCRIPTS ===
-from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset
+from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset, build_features
 from v3_prediction_model import predict_match
+from booking_extractor import extract_booking_code_data
 
 # === LOAD ENV VARS ===
 load_dotenv()
@@ -64,7 +65,7 @@ async def run_version3_pipeline(league_id, season, sport="football"):
         return
 
     # 2. Fetch odds
-    odds_data = fetch_odds()
+    odds_data = fetch_odds(sport, league_id)
 
     # 3. Build dataset (team + player + context metrics)
     dataset = build_dataset(fixtures, sport)
@@ -115,13 +116,68 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handle multi-sport messages: Sport | Home vs Away | OddsH | OddsD | OddsA
-    Bot automatically pulls API + Scraped data internally.
+    Handle multi-sport messages:
+    1. CODE | <booking_code>
+    2. Sport | Home vs Away | OddsH | OddsD | OddsA
     """
     if str(update.effective_chat.id) != CHAT_ID:
         return
 
     text = update.message.text.strip()
+
+    # Check for Booking Code input
+    if text.startswith("CODE |"):
+        booking_code = text.split("|")[1].strip()
+        await update.message.reply_text(f"⏳ Extracting matches from SportyBet code: `{booking_code}`...", parse_mode='Markdown')
+
+        extracted_matches = extract_booking_code_data(booking_code)
+
+        if not extracted_matches:
+            await update.message.reply_text("❌ Invalid or expired booking code, or no matches found.")
+            return
+
+        await update.message.reply_text(f"✅ Extracted {len(extracted_matches)} matches. Analyzing...")
+
+        results = []
+        for match in extracted_matches:
+            try:
+                # 1. Map extracted data to our feature builder
+                # We mock the API part for build_features if not found
+                pseudo_fixture = {
+                    "home_team": match["home"],
+                    "away_team": match["away"],
+                    "sport": match["sport"]
+                }
+
+                # 2. Build features
+                # Note: build_features in full_data_pipeline needs home/away names
+                features = build_features(pseudo_fixture, match["sport"])
+
+                # 3. Add extracted odds
+                features.update({
+                    "odds_home": match["odds_home"],
+                    "odds_draw": match["odds_draw"],
+                    "odds_away": match["odds_away"]
+                })
+
+                # 4. Predict
+                prediction = predict_match(features, match["sport"])
+
+                results.append({
+                    "match": f"{match['home']} vs {match['away']}",
+                    "markets": prediction
+                })
+            except Exception as e:
+                print(f"Error analyzing extracted match: {e}")
+                continue
+
+        if results:
+            message = format_telegram_message(results)
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text("No high-value bets identified from this code.")
+        return
+
     try:
         parts = [t.strip() for t in text.split("|")]
         if len(parts) < 3:
