@@ -44,10 +44,16 @@ This repository includes two versions:
    - For VPS/Linux: `pip install -r requirements.txt`
    - For Termux: `pip install -r requirements_lite.txt`
 
-3. **Install Playwright Browsers:**
-   ```bash
-   playwright install chromium --with-deps
-   ```
+3. **Install Browsers:**
+   - **For Playwright (Linux/VPS):**
+     ```bash
+     playwright install chromium --with-deps
+     ```
+   - **For Selenium (Termux):**
+     ```bash
+     pkg update -y
+     pkg install firefox geckodriver -y
+     ```
 
 4. **Configure Environment:**
    Create a `.env` file based on `.env.example`:

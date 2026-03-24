@@ -13,6 +13,8 @@ USE_SELENIUM = os.getenv("USE_SELENIUM", "False").lower() == "true"
 
 # Termux path fallback
 CHROMIUM_PATH = os.getenv("CHROMIUM_PATH", "/data/data/com.termux/files/usr/bin/chromium")
+FIREFOX_PATH = os.getenv("FIREFOX_PATH", "/data/data/com.termux/files/usr/bin/firefox")
+GECKODRIVER_PATH = os.getenv("GECKODRIVER_PATH", "/data/data/com.termux/files/usr/bin/geckodriver")
 
 def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
     """
@@ -75,22 +77,23 @@ def _extract_with_playwright(code: str) -> List[Dict]:
 
 def _extract_with_selenium(code: str) -> List[Dict]:
     from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.firefox.options import Options
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.firefox.service import Service
     results = []
 
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    ff_options = Options()
+    ff_options.add_argument("--headless")
 
-    driver_kwargs = {"options": chrome_options}
-    if os.path.exists(CHROMIUM_PATH):
-        driver_kwargs["service"] = Service(CHROMIUM_PATH)
+    driver_kwargs = {"options": ff_options}
+    if os.path.exists(GECKODRIVER_PATH):
+        driver_kwargs["service"] = Service(GECKODRIVER_PATH)
 
-    driver = webdriver.Chrome(**driver_kwargs)
+    # Optional: set binary path if not in standard locations
+    if os.path.exists(FIREFOX_PATH):
+        ff_options.binary_location = FIREFOX_PATH
+
+    driver = webdriver.Firefox(**driver_kwargs)
 
     try:
         driver.get("https://www.sportybet.com/ng")
