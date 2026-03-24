@@ -39,9 +39,9 @@ async def test_main_flow():
             args, _ = mock_send.call_args
             print("Captured Telegram Message:")
             print(args[0])
-            assert "High-Confidence Value Bets" in args[0]
+            assert "High-Value Bets" in args[0]
             assert "Team A vs Team B" in args[0]
-            assert "H2H" in args[0]
+            assert "Outcome: Home" in args[0]
 
 if __name__ == "__main__":
     asyncio.run(test_main_flow())

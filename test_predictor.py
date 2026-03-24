@@ -14,6 +14,8 @@ class TestFootballPredictor(unittest.TestCase):
 
     def test_predict_match(self):
         features = {
+            "home_team": "Team A",
+            "away_team": "Team B",
             "home_xG": 2.0,
             "away_xG": 1.0,
             "odds_home": 2.0

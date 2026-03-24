@@ -44,14 +44,36 @@ def train_model(X_train, y_train):
 
     return clf
 
-def predict_matches(matches_features):
+def predict_matches(matches_features, sport="football"):
     """Predict multiple matches."""
-    return [predict_match(f) for f in matches_features]
+    return [predict_match(f, sport) for f in matches_features]
 
-def predict_match(features):
+def predict_match(features, sport="football"):
     """
     Predict match outcome (H2H, BTTS, Over 2.5) and calculate value.
+    Returns only final predictions with required fields.
     """
+    if sport != "football":
+        # Placeholder for other sports (Moneyline only for now)
+        model_prob_home = 0.5
+        odds_home = features.get("odds_home")
+        implied_prob_home = 1 / odds_home if odds_home and odds_home > 0 else 0
+        value_home = model_prob_home - implied_prob_home
+
+        # Consistent output format with skeleton
+        prediction_result = {
+            "match": f"{features['home_team']} vs {features['away_team']}",
+            "outcome": "Home",
+            "value": round(value_home, 3),
+            "betting_code": f"{features['home_team'].replace(' ', '_').upper()}_VS_{features['away_team'].replace(' ', '_').upper()}",
+            "model_probability": round(model_prob_home, 3),
+            "implied_probability": round(implied_prob_home, 3)
+        }
+
+        return {
+            "h2h": prediction_result
+        }
+
     # Define expected feature order for H2H
     feature_names = [
         "home_xG", "away_xG", "home_xGA", "away_xGA", "home_xGD", "away_xGD",
@@ -89,20 +111,32 @@ def predict_match(features):
     implied_prob_over_25 = 1 / odds_over_25 if odds_over_25 and odds_over_25 > 0 else 0
     value_over_25 = over_25_prob - implied_prob_over_25
 
+    match_str = f"{features['home_team']} vs {features['away_team']}"
+    bet_code = match_str.replace(' ', '_').upper()
+
     return {
         "h2h": {
+            "match": match_str,
+            "outcome": "Home",
+            "value": round(value_home, 3),
+            "betting_code": bet_code,
             "model_probability": round(model_prob_home, 3),
-            "implied_probability": round(implied_prob_home, 3),
-            "value": round(value_home, 3)
+            "implied_probability": round(implied_prob_home, 3)
         },
         "btts": {
+            "match": match_str,
+            "outcome": "BTTS YES",
+            "value": round(value_btts, 3),
+            "betting_code": f"BTTS_{bet_code}",
             "model_probability": round(btts_prob, 3),
-            "implied_probability": round(implied_prob_btts, 3),
-            "value": round(value_btts, 3)
+            "implied_probability": round(implied_prob_btts, 3)
         },
         "over_25": {
+            "match": match_str,
+            "outcome": "OVER 2.5",
+            "value": round(value_over_25, 3),
+            "betting_code": f"O25_{bet_code}",
             "model_probability": round(over_25_prob, 3),
-            "implied_probability": round(implied_prob_over_25, 3),
-            "value": round(value_over_25, 3)
+            "implied_probability": round(implied_prob_over_25, 3)
         }
     }

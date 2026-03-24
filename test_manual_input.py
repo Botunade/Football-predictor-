@@ -10,7 +10,7 @@ async def test_manual_input_parsing():
     # Ensure current environment CHAT_ID matches
     import main
     main.CHAT_ID = "7104386905"
-    mock_update.message.text = "Arsenal vs Chelsea | 2.10 | 3.50 | 3.20"
+    mock_update.message.text = "Football | Arsenal vs Chelsea | 2.10 | 3.50 | 3.20"
     mock_context = MagicMock()
 
     # Mock internal methods to avoid API calls during test
@@ -21,7 +21,7 @@ async def test_manual_input_parsing():
 
         mock_scrape.return_value = {"xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 50.0}
         mock_player.return_value = {"injury_index": 0.1, "fatigue_index": 0.2, "key_player_dependency": 0.5}
-        mock_predict.return_value = {"model_probability": 0.60, "implied_probability": 0.48, "value": 0.12}
+        mock_predict.return_value = {"h2h": {"model_probability": 0.60, "implied_probability": 0.48, "value": 0.12, "outcome": "Home"}}
         mock_format.return_value = "Test Message"
 
         await handle_manual_input(mock_update, mock_context)
@@ -29,8 +29,8 @@ async def test_manual_input_parsing():
         # Verify first reply was "Analyzing..."
         self_replies = [call.args[0] for call in mock_update.message.reply_text.call_args_list]
         print(f"Captured self-replies: {self_replies}")
-        # Message was "⏳ Analyzing *Arsenal vs Chelsea*..."
-        assert any("Analyzing" in r and "Arsenal" in r for r in self_replies)
+        # Message was "⏳ *Automated Analysis:* Arsenal vs Chelsea (Football)..."
+        assert any("Analysis" in r and "Arsenal" in r for r in self_replies)
         assert "Test Message" in self_replies
         print("Manual input test passed!")
 

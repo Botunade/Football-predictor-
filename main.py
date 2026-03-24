@@ -36,26 +36,17 @@ async def send_telegram_message(message):
 
 def format_telegram_message(results):
     """
-    Formats prediction results for Telegram.
-    Input: results = list of dicts, each containing:
-        - match
-        - markets (dict of market results)
-    Output: formatted string ready to send via bot.send_message
+    Formats prediction results for Telegram – cleanly listing only results and codes.
     """
     if not results:
-        return "⚠️ No high-confidence matches found in this cycle."
+        return "⚠️ No high-value bets found in this cycle."
 
-    message = "📊 *High-Confidence Value Bets* (Version 3)\n\n"
+    message = "📊 *High-Value Bets* (Automated V3)\n\n"
 
     for i, r in enumerate(results, start=1):
-        message += f"*{i}. Match:* {r['match']}\n"
         for market_name, data in r['markets'].items():
             if data['value'] > 0.08:
-                message += f"• *Market:* {market_name.upper()}\n"
-                message += f"  • Model Prob: {data['model_probability']:.2%} | Implied Prob: {data['implied_probability']:.2%}\n"
-                message += f"  • Value: {data['value']:.2%}\n"
-
-        message += f"• Betting Code: `{r['match'].replace(' ', '_').upper()}`\n\n"
+                message += f"{i}. *{r['match']}* | Outcome: {data['outcome']} | Value: {data['value']*100:.1f}% | Code: `{data['betting_code']}`\n"
 
     message += "✅ Data source: APIs + Scraping + OddsAPI\n"
     message += "💡 Only high-value bets included (value > 8%)\n"
@@ -63,11 +54,11 @@ def format_telegram_message(results):
     return message
 
 # === PIPELINE + MODEL FUNCTION ===
-async def run_version3_pipeline(league_id, season):
-    print(f"Starting pipeline run for League {league_id}, Season {season}")
+async def run_version3_pipeline(league_id, season, sport="football"):
+    print(f"Starting pipeline run for {sport.capitalize()} League {league_id}, Season {season}")
 
     # 1. Fetch fixtures
-    fixtures = fetch_fixtures(league_id, season)
+    fixtures = fetch_fixtures(league_id, season, sport)
     if not fixtures:
         print("No fixtures found.")
         return
@@ -76,7 +67,7 @@ async def run_version3_pipeline(league_id, season):
     odds_data = fetch_odds()
 
     # 3. Build dataset (team + player + context metrics)
-    dataset = build_dataset(fixtures)
+    dataset = build_dataset(fixtures, sport)
 
     # 4. Merge odds
     df_odds = pd.DataFrame(odds_data)
@@ -93,7 +84,7 @@ async def run_version3_pipeline(league_id, season):
     results = []
     for _, match in final_dataset.iterrows():
         features = match.to_dict()
-        prediction = predict_match(features)
+        prediction = predict_match(features, sport)
 
         # Check if any market has high value
         has_value = any(m['value'] > 0.08 for m in prediction.values())
@@ -115,53 +106,71 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_chat.id) != CHAT_ID:
         return
     await update.message.reply_text(
-        "🚀 *Football Predictor V3* is active!\n\n"
+        "🚀 *Multi-Sport Predictor V3* is active!\n\n"
         "Send match data in this format to analyze:\n"
-        "`HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway`",
+        "`Sport | HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway | OptionalScrapeURL` (Draw is optional for non-football)\n"
+        "Example: `Football | Arsenal vs Chelsea | 2.1 | 3.5 | 3.2`",
         parse_mode='Markdown'
     )
 
 async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle messages in the format: HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway"""
+    """
+    Handle multi-sport messages: Sport | Home vs Away | OddsH | OddsD | OddsA
+    Bot automatically pulls API + Scraped data internally.
+    """
     if str(update.effective_chat.id) != CHAT_ID:
         return
 
-    text = update.message.text
+    text = update.message.text.strip()
     try:
-        # Example input: Manchester United vs Liverpool | 2.50 | 3.40 | 2.80
-        parts = [p.strip() for p in text.split('|')]
-        if len(parts) != 4:
-            raise ValueError("Invalid format. Use: HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway")
+        parts = [t.strip() for t in text.split("|")]
+        if len(parts) < 3:
+            raise ValueError("Invalid format. Use: Sport | Home vs Away | Odds...")
 
-        teams = parts[0].split(' vs ')
+        sport = parts[0].lower()
+        if sport not in ["football", "basketball", "hockey"]:
+            raise ValueError(f"Sport '{sport}' not supported.")
+
+        match_part = parts[1]
+        teams = match_part.split(' vs ')
         if len(teams) != 2:
             raise ValueError("Match must be in 'HomeTeam vs AwayTeam' format.")
 
         home_team, away_team = teams[0].strip(), teams[1].strip()
-        odds_h = float(parts[1])
-        odds_d = float(parts[2])
-        odds_a = float(parts[3])
 
-        await update.message.reply_text(f"⏳ Analyzing *{home_team} vs {away_team}*...", parse_mode='Markdown')
+        # Parsing odds
+        odds_h = float(parts[2])
+        odds_d = None
+        odds_a = None
 
-        # Try to parse optional extra markets from the text
-        # If the input has more than 4 parts, we can look for BTTS/O2.5 odds
-        # For simplicity, we assume the format could be: Match | H | D | A | BTTS_YES | O2.5
-        odds_btts = None
-        odds_o25 = None
-        if len(parts) >= 5:
-            odds_btts = float(parts[4])
-        if len(parts) >= 6:
-            odds_o25 = float(parts[5])
+        if sport == "football":
+            if len(parts) < 5:
+                raise ValueError("Football requires 3 odds (H|D|A)")
+            odds_d = float(parts[3])
+            odds_a = float(parts[4])
+        else:
+            if len(parts) < 4:
+                raise ValueError(f"{sport.capitalize()} requires 2 odds (H|A)")
+            odds_a = float(parts[3])
 
-        # Create a single match result for prediction
-        # In a real scenario, we'd fetch actual team data from our pipeline here
-        # For now, we'll use our build_features/predict_matches modular flow
-        from full_data_pipeline import scrape_understat_team, fetch_player_info, compute_context
+        await update.message.reply_text(f"⏳ *Automated Analysis:* {home_team} vs {away_team} ({sport.capitalize()})...", parse_mode='Markdown')
 
-        # Build features for this manual match
-        home_stats = scrape_understat_team(home_team, 2024)
-        away_stats = scrape_understat_team(away_team, 2024)
+        from full_data_pipeline import scrape_understat_team, scrape_advanced_stats
+
+        # 1. Automatically fetch Scraped stats
+        scraped_data = scrape_advanced_stats(sport, match_part)
+
+        # 2. Base stats (Football-only Understat for now)
+        if sport == "football":
+            home_stats = scrape_understat_team(home_team, 2024)
+            away_stats = scrape_understat_team(away_team, 2024)
+        else:
+            home_stats = {"xG": 0, "xGA": 0, "xGD": 0, "PPDA": 0}
+            away_stats = {"xG": 0, "xGA": 0, "xGD": 0, "PPDA": 0}
+
+        if scraped_data:
+            home_stats.update(scraped_data.get("home", {}))
+            away_stats.update(scraped_data.get("away", {}))
 
         features = {
             "home_team": home_team,
@@ -174,7 +183,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             "away_xGD": away_stats["xGD"],
             "home_ppda": home_stats["PPDA"],
             "away_ppda": away_stats["PPDA"],
-            "home_injury": 0.1, # Default
+            "home_injury": 0.1,
             "away_injury": 0.1,
             "home_fatigue": 0.2,
             "away_fatigue": 0.2,
@@ -183,12 +192,10 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             "is_derby": 0,
             "odds_home": odds_h,
             "odds_draw": odds_d,
-            "odds_away": odds_a,
-            "odds_btts": odds_btts,
-            "odds_over_25": odds_o25
+            "odds_away": odds_a
         }
 
-        prediction = predict_match(features)
+        prediction = predict_match(features, sport)
 
         result = {
             "match": f"{home_team} vs {away_team}",
@@ -203,22 +210,24 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        league_id = int(context.args[0])
-        season = int(context.args[1])
-        await update.message.reply_text(f"⏳ Running pipeline for League {league_id}, Season {season}...")
-        await run_version3_pipeline(league_id, season)
+        sport = context.args[0].lower() if len(context.args) > 0 else "football"
+        league_id = int(context.args[1]) if len(context.args) > 1 else 39
+        season = int(context.args[2]) if len(context.args) > 2 else 2024
+
+        await update.message.reply_text(f"⏳ Running {sport} pipeline for League {league_id}, Season {season}...")
+        await run_version3_pipeline(league_id, season, sport)
     except (IndexError, ValueError):
-        await update.message.reply_text("❌ Usage: /predict <league_id> <season>\nExample: /predict 39 2024")
+        await update.message.reply_text("❌ Usage: /predict <sport> <league_id> <season>\nExample: /predict football 39 2024")
 
 # === SCHEDULER / MAIN LOOP ===
-async def scheduler_task(league_id, season, interval):
+async def scheduler_task(league_id, season, interval, sport="football"):
     while True:
-        print(f"Running scheduled pipeline at {datetime.now()} ...")
+        print(f"Running scheduled {sport} pipeline at {datetime.now()} ...")
         try:
-            await run_version3_pipeline(league_id, season)
+            await run_version3_pipeline(league_id, season, sport)
         except Exception as e:
-            print("Error during pipeline run:", e)
-            await send_telegram_message(f"⚠️ Pipeline error: {e}")
+            print(f"Error during {sport} pipeline run:", e)
+            await send_telegram_message(f"⚠️ {sport.capitalize()} Pipeline error: {e}")
 
         print(f"Sleeping {interval/3600} hours before next run...")
         await asyncio.sleep(interval)
@@ -248,7 +257,7 @@ async def main():
     SEASON = 2024
     INTERVAL = 12 * 60 * 60
 
-    asyncio.create_task(scheduler_task(LEAGUE_ID, SEASON, INTERVAL))
+    asyncio.create_task(scheduler_task(LEAGUE_ID, SEASON, INTERVAL, "football"))
 
     print("Bot is running and listening for commands...")
     async with application:
