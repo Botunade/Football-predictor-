@@ -29,6 +29,7 @@ async def test_manual_input_parsing():
         # Verify first reply was "Analyzing..."
         self_replies = [call.args[0] for call in mock_update.message.reply_text.call_args_list]
         print(f"Captured self-replies: {self_replies}")
+        assert any("Please use `/sporty <code>`" in r for r in self_replies)
         # Message was "⏳ *Automated Analysis:* Arsenal vs Chelsea (Football)..."
         assert any("Analysis" in r and "Arsenal" in r for r in self_replies)
         assert "Test Message" in self_replies

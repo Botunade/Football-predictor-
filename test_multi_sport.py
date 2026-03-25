@@ -26,6 +26,7 @@ async def test_multi_sport_input_parsing():
 
         self_replies = [call.args[0] for call in mock_update.message.reply_text.call_args_list]
         print(f"Basketball replies: {self_replies}")
+        assert any("Please use `/sporty <code>`" in r for r in self_replies)
         assert any("Lakers" in r and "Basketball" in r for r in self_replies)
         assert "Test Basketball Message" in self_replies
 
@@ -44,6 +45,7 @@ async def test_multi_sport_input_parsing():
 
         self_replies = [call.args[0] for call in mock_update.message.reply_text.call_args_list]
         print(f"Hockey replies: {self_replies}")
+        assert any("Please use `/sporty <code>`" in r for r in self_replies)
         assert any("Rangers" in r and "Hockey" in r for r in self_replies)
         assert "Test Hockey Message" in self_replies
 
@@ -52,6 +54,7 @@ async def test_multi_sport_input_parsing():
     mock_update.message.text = "Tennis | Nadal vs Federer | 1.50 | 2.50"
     await handle_manual_input(mock_update, mock_context := MagicMock())
     self_replies = [call.args[0] for call in mock_update.message.reply_text.call_args_list]
+    assert any("Please use `/sporty <code>`" in r for r in self_replies)
     assert any("Sport 'tennis' not supported" in r for r in self_replies)
 
     print("Multi-sport input tests passed!")
