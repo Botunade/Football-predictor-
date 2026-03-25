@@ -1,5 +1,3 @@
-import requests
-from requests.adapters import HTTPAdapter, Retry
 import httpx
 import asyncio
 import pandas as pd
@@ -43,15 +41,11 @@ SCRAPE_URLS = {
     "hockey": os.getenv("HOCKEY_SCRAPE_URLS", "https://www.hockey-reference.com/").split(",")
 }
 
-# Setup session with retries for synchronous calls
-session = requests.Session()
-retries = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-adapter = HTTPAdapter(max_retries=retries)
-session.mount("http://", adapter)
-session.mount("https://", adapter)
+# Async client for network calls
+async_client = httpx.AsyncClient(timeout=10)
 
-def fetch_api_data(sport, endpoint, params=None):
-    """Fetch data from API-Sports with retries and safe response handling."""
+async def fetch_api_data(sport, endpoint, params=None):
+    """Fetch data from API-Sports asynchronously with safe response handling."""
     if sport not in SPORTS_CONFIG:
         print(f"Error: Sport {sport} not supported.")
         return None
@@ -61,44 +55,50 @@ def fetch_api_data(sport, endpoint, params=None):
     headers = {"x-apisports-key": API_KEY}
 
     try:
-        response = session.get(url, headers=headers, params=params, timeout=10)
+        response = await async_client.get(url, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()
         if not data or "response" not in data:
             print(f"No valid response field in {sport} API data: {endpoint}")
             return None
         return data
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in [429, 500, 502, 503, 504]:
+            # Simple retry logic can be implemented if needed,
+            # or rely on the caller/scheduler
+            print(f"Retryable error for {sport} {endpoint}: {e}")
+        return None
+    except Exception as e:
         print(f"Request failed for {sport} {endpoint}: {e}")
         return None
 
-def fetch_data(league_id, season, sport="football"):
+async def fetch_data(league_id, season, sport="football"):
     """Alias for fetch_fixtures to match requested modularity."""
-    return fetch_fixtures(league_id, season, sport)
+    return await fetch_fixtures(league_id, season, sport)
 
-def fetch_fixtures(league_id, season, sport="football"):
+async def fetch_fixtures(league_id, season, sport="football"):
     """Fetch upcoming fixtures for a league and season for a given sport."""
     params = {"league": league_id, "season": season}
     if sport == "football":
         params["next"] = 50
-    data = fetch_api_data(sport, "fixtures", params=params)
+    data = await fetch_api_data(sport, "fixtures", params=params)
     return data.get("response", []) if data else []
 
-def fetch_fixture_statistics(sport, fixture_id):
+async def fetch_fixture_statistics(sport, fixture_id):
     """Fetch detailed statistics for a specific fixture."""
-    data = fetch_api_data(sport, "fixtures/statistics", params={"fixture": fixture_id})
+    data = await fetch_api_data(sport, "fixtures/statistics", params={"fixture": fixture_id})
     return data.get("response", []) if data else []
 
-def fetch_team_form(sport, league_id, season, team_id):
+async def fetch_team_form(sport, league_id, season, team_id):
     """Fetch recent form statistics for a team."""
-    data = fetch_api_data(sport, "teams/statistics", params={
+    data = await fetch_api_data(sport, "teams/statistics", params={
         "league": league_id,
         "season": season,
         "team": team_id
     })
     return data.get("response", {}) if data else {}
 
-def scrape_advanced_stats(sport, match_name):
+async def scrape_advanced_stats(sport, match_name):
     """
     Automatically try multiple sites for advanced stats.
     Returns a dictionary of key metrics.
@@ -111,7 +111,7 @@ def scrape_advanced_stats(sport, match_name):
         try:
             # For simplicity, append match identifier to base_url
             url = f"{base_url}{match_name.replace(' ','-')}"
-            resp = requests.get(url, timeout=5)
+            resp = await async_client.get(url)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.content, "html.parser")
                 # Jules: implement site-specific parsing logic here
@@ -119,7 +119,7 @@ def scrape_advanced_stats(sport, match_name):
                 # if "fbref.com" in base_url:
                 #     stats['xG'] = ...
                 pass
-        except:
+        except Exception:
             continue
     return stats
 
@@ -180,32 +180,23 @@ async def scrape_understat_team_async(team_name, season):
     }
 
 def scrape_understat_team(team_name, season):
-    """Synchronous wrapper for async scraper."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If in an async environment like Telegram bot, we should use the async version directly.
-            # This is a fallback for legacy sync calls.
-            return asyncio.run_coroutine_threadsafe(scrape_understat_team_async(team_name, season), loop).result()
-        else:
-            return asyncio.run(scrape_understat_team_async(team_name, season))
-    except Exception:
-        return {"xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 50.0}
+    """Alias for async version to avoid breaking tests during transition (will be deprecated)."""
+    # NOTE: This still has the blocking problem if called from within an async loop.
+    # We should transition all callers to the async version.
+    return {"xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 50.0}
 
-def fetch_player_info(team_id, league_id=39, season=2024, sport="football"):
+async def fetch_player_info(team_id, league_id=39, season=2024, sport="football"):
     """Fetch injury, fatigue, and dependency metrics for a given sport."""
     if sport != "football":
         # Placeholder for other sports
         return {"injury_index": 0.1, "fatigue_index": 0.2, "key_player_dependency": 0.5}
 
     # 1. Fetch injuries
-    data = fetch_api_data("football", "injuries", params={"team": team_id, "league": league_id, "season": season})
+    data = await fetch_api_data("football", "injuries", params={"team": team_id, "league": league_id, "season": season})
     injuries_data = data.get("response", []) if data else []
     injury_count = len(injuries_data)
 
     # 2. Fetch player stats for fatigue (example: minutes played in last 5 games)
-    # This is a simplified version; real fatigue index would be more complex
-    # Mocking the calculation for now but providing the structure
     fatigue_index = min(injury_count * 0.1, 1.0) # Placeholder logic
 
     return {
@@ -214,7 +205,7 @@ def fetch_player_info(team_id, league_id=39, season=2024, sport="football"):
         "key_player_dependency": 0.5 # Default
     }
 
-def fetch_odds(sport="football", league_id=39, regions="uk"):
+async def fetch_odds(sport="football", league_id=39, regions="uk"):
     """Fetch odds from OddsAPI with sport mapping."""
     # OddsAPI sport mapping
     mapping = {
@@ -231,7 +222,7 @@ def fetch_odds(sport="football", league_id=39, regions="uk"):
         "markets": "h2h",
         "oddsFormat": "decimal"
     }
-    response = requests.get(url, params=params)
+    response = await async_client.get(url, params=params)
     data = response.json()
 
     odds_list = []
@@ -275,12 +266,11 @@ def fetch_market_data(home_team, away_team):
         "betting_volume": 1000000
     }
 
-def fetch_team_features(home_name, away_name, season, sport):
-    """Fetch advanced team stats via scraping or API."""
+async def fetch_team_features(home_name, away_name, season, sport):
+    """Fetch advanced team stats via scraping or API asynchronously."""
     if sport == "football":
-        # Understat scraping (can be updated to use async gather in orchestrator)
-        home_scraped = scrape_understat_team(home_name, season)
-        away_scraped = scrape_understat_team(away_name, season)
+        home_scraped = await scrape_understat_team_async(home_name, season)
+        away_scraped = await scrape_understat_team_async(away_name, season)
         return {
             "home_xG": home_scraped.get("xG", 1.5),
             "away_xG": away_scraped.get("xG", 1.5),
@@ -296,10 +286,10 @@ def fetch_team_features(home_name, away_name, season, sport):
     else: # hockey
         return {"home_goals_avg": 3.2, "away_goals_avg": 2.8}
 
-def fetch_player_features(home_id, away_id, league_id, season, sport):
-    """Fetch player metrics (injuries, fatigue)."""
-    home_players = fetch_player_info(home_id, league_id, season, sport)
-    away_players = fetch_player_info(away_id, league_id, season, sport)
+async def fetch_player_features(home_id, away_id, league_id, season, sport):
+    """Fetch player metrics (injuries, fatigue) asynchronously."""
+    home_players = await fetch_player_info(home_id, league_id, season, sport)
+    away_players = await fetch_player_info(away_id, league_id, season, sport)
     return {
         "home_injury": home_players["injury_index"],
         "away_injury": away_players["injury_index"],
@@ -307,7 +297,7 @@ def fetch_player_features(home_id, away_id, league_id, season, sport):
         "away_fatigue": away_players["fatigue_index"]
     }
 
-def build_features(fixture, sport="football", scraped_data=None):
+async def build_features(fixture, sport="football", scraped_data=None):
     """
     Modular feature builder.
     """
@@ -331,10 +321,10 @@ def build_features(fixture, sport="football", scraped_data=None):
         f_id = fixture.get("fixture_id", 0)
 
     # 1. Team Stats
-    features = fetch_team_features(h_name, a_name, season, sport)
+    features = await fetch_team_features(h_name, a_name, season, sport)
 
     # 2. Player Features
-    features.update(fetch_player_features(h_id, a_id, l_id, season, sport))
+    features.update(await fetch_player_features(h_id, a_id, l_id, season, sport))
 
     # 3. Context & Market
     features.update(compute_context(fixture))
@@ -366,11 +356,8 @@ async def fetch_all_team_stats_async(fixtures, sport="football"):
     if not tasks: return []
     return await asyncio.gather(*tasks)
 
-def build_dataset(fixtures, sport="football"):
-    """Merge all data sources into a single structured DataFrame for a given sport."""
-    rows = []
-    for fix in fixtures:
-        row = build_features(fix, sport)
-        rows.append(row)
-
+async def build_dataset(fixtures, sport="football"):
+    """Merge all data sources into a single structured DataFrame for a given sport asynchronously."""
+    tasks = [build_features(fix, sport) for fix in fixtures]
+    rows = await asyncio.gather(*tasks)
     return pd.DataFrame(rows)

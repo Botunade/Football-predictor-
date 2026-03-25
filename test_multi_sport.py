@@ -14,7 +14,7 @@ async def test_multi_sport_input_parsing():
 
     # 1. Test Basketball
     mock_update.message.text = "Basketball | Lakers vs Celtics | 1.90 | 1.95"
-    with patch('full_data_pipeline.fetch_player_info') as mock_player, \
+    with patch('full_data_pipeline.fetch_player_info', new_callable=AsyncMock) as mock_player, \
          patch('v3_prediction_model.predict_match') as mock_predict:
 
         mock_player.return_value = {"injury_index": 0.1, "fatigue_index": 0.2, "key_player_dependency": 0.5}
@@ -32,7 +32,7 @@ async def test_multi_sport_input_parsing():
     # 2. Test Hockey
     mock_update.message.reply_text.reset_mock()
     mock_update.message.text = "Hockey | Rangers vs Penguins | 2.10 | 1.80"
-    with patch('full_data_pipeline.fetch_player_info') as mock_player, \
+    with patch('full_data_pipeline.fetch_player_info', new_callable=AsyncMock) as mock_player, \
          patch('v3_prediction_model.predict_match') as mock_predict:
 
         mock_player.return_value = {"injury_index": 0.1, "fatigue_index": 0.2, "key_player_dependency": 0.5}

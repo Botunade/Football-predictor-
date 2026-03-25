@@ -13,6 +13,7 @@ import re
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from telegram import Update
+import telegram.error
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from extractor import extract_sporty_code  # New Playwright extraction
 from verify_creds import verify_creds
@@ -28,6 +29,20 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 # --- Helper Functions ---
+async def send_message_safe(update: Update, text: str, parse_mode: str = None, retries: int = 3):
+    """Send a Telegram message with retry and exponential backoff for timeouts."""
+    for attempt in range(retries):
+        try:
+            return await update.message.reply_text(text, parse_mode=parse_mode, timeout=30)
+        except telegram.error.TimedOut:
+            wait_time = (attempt + 1) * 5
+            print(f"[Telegram Timeout] Attempt {attempt+1} failed. Retrying in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+        except Exception as e:
+            print(f"[Telegram Error] {e}")
+            break
+    return None
+
 def determine_status(start_time: str, end_time: str = None) -> str:
     """Determine game status: upcoming, running, finished."""
     try:
@@ -105,7 +120,8 @@ async def background_analysis(games: list):
 # --- Telegram Command Handlers ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_chat.id) != CHAT_ID: return
-    await update.message.reply_text(
+    await send_message_safe(
+        update,
         "🚀 *Multi-Sport Predictor V3* is active!\n\n"
         "I can analyze SportyBet betslips and manual match inputs.\n\n"
         "*Commands*:\n"
@@ -120,21 +136,21 @@ async def handle_sporty_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if str(update.effective_chat.id) != CHAT_ID: return
 
     if not context.args:
-        await update.message.reply_text("❌ Please provide a SportyBet code. Usage: `/sporty <code>`")
+        await send_message_safe(update, "❌ Please provide a SportyBet code. Usage: `/sporty <code>`")
         return
 
     code = context.args[0]
-    await update.message.reply_text(f"⏳ Extracting matches from SportyBet code: {code}...")
+    await send_message_safe(update, f"⏳ Extracting matches from SportyBet code: {code}...")
 
     try:
         games = await extract_sporty_code(code)
     except Exception as e:
         print(f"[Extractor Error] {e}")
-        await update.message.reply_text("❌ Failed to extract matches due to network/Playwright issues.")
+        await send_message_safe(update, "❌ Failed to extract matches due to network/Playwright issues.")
         return
 
     if not games:
-        await update.message.reply_text("❌ Invalid or expired booking code, or no matches found.")
+        await send_message_safe(update, "❌ Invalid or expired booking code, or no matches found.")
         return
 
     # Update status for all games
@@ -142,7 +158,7 @@ async def handle_sporty_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
         game["status"] = determine_status(game["start_time"], game.get("end_time"))
 
     # Send games to Telegram
-    await update.message.reply_text(format_matches_with_status_and_odds(games))
+    await send_message_safe(update, format_matches_with_status_and_odds(games))
 
     # Run background ML/data analysis
     asyncio.create_task(background_analysis(games))
@@ -157,13 +173,13 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     parts = [p.strip() for p in text.split("|")]
     if len(parts) < 3:
-        await update.message.reply_text("❌ Invalid format. Use: `Sport | Home vs Away | OddsH | [OddsD] | OddsA`")
+        await send_message_safe(update, "❌ Invalid format. Use: `Sport | Home vs Away | OddsH | [OddsD] | OddsA`")
         return
 
     sport = parts[0].lower()
     teams = parts[1].split(" vs ")
     if len(teams) != 2:
-        await update.message.reply_text("❌ Invalid teams format. Use: `Home vs Away`")
+        await send_message_safe(update, "❌ Invalid teams format. Use: `Home vs Away`")
         return
 
     home_team, away_team = teams
@@ -184,10 +200,10 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             odds_draw = float(parts[3])
             odds_away = float(parts[4])
     except ValueError:
-        await update.message.reply_text("❌ Invalid odds. Please use numbers.")
+        await send_message_safe(update, "❌ Invalid odds. Please use numbers.")
         return
 
-    await update.message.reply_text(f"⏳ Analyzing {home_team} vs {away_team} ({sport})...")
+    await send_message_safe(update, f"⏳ Analyzing {home_team} vs {away_team} ({sport})...")
 
     # Build features & Predict
     fixture_mock = {
@@ -199,12 +215,12 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
     }
 
     try:
-        features = build_features(fixture_mock, sport=sport)
+        features = await build_features(fixture_mock, sport=sport)
         prediction = predict_match(features, sport=sport)
-        await update.message.reply_text(format_telegram_message(prediction), parse_mode="Markdown")
+        await send_message_safe(update, format_telegram_message(prediction), parse_mode="Markdown")
     except Exception as e:
         print(f"[Manual Input Error] {e}")
-        await update.message.reply_text("❌ Error during analysis. Please check your input format.")
+        await send_message_safe(update, "❌ Error during analysis. Please check your input format.")
 
 async def scheduled_task(context: ContextTypes.DEFAULT_TYPE):
     """Run automated analysis every 12 hours."""
@@ -213,13 +229,18 @@ async def scheduled_task(context: ContextTypes.DEFAULT_TYPE):
     # For now, just a placeholder log
     pass
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Global error handler to catch uncaught exceptions."""
+    print(f"Update {update} caused error {context.error}")
+
 # --- Main Application ---
 def main():
     if not TELEGRAM_TOKEN:
         print("Error: TELEGRAM_TOKEN is missing in .env")
         return
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # Increase request timeout in the application builder
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).read_timeout(30).write_timeout(30).build()
 
     # Add JobQueue for 12-hour scheduling
     job_queue = app.job_queue
@@ -229,6 +250,9 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("sporty", handle_sporty_code))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
+
+    # Add global error handler
+    app.add_error_handler(error_handler)
 
     print("Bot is running and listening for commands...")
     app.run_polling()
