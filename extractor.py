@@ -26,6 +26,11 @@ def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
     for attempt in range(retries + 1):
         try:
             if USE_PLAYWRIGHT:
+                # Playwright extraction logic goes here
+                return await _extract_with_playwright(code)
+            elif USE_SELENIUM:
+                # Selenium extraction logic goes here
+                return await _extract_with_selenium(code)
                 return await _extract_with_playwright(code)
                 return _extract_with_playwright(code)
             elif USE_SELENIUM:
@@ -222,6 +227,8 @@ def _parse_raw_text(text: str) -> Dict:
 
         teams = teams_line.split(' vs ')
         home = teams[0].strip()
+        # Join back in case of spaces in away team name, but split on space to remove trailing text if needed
+        away = teams[1].strip().split(' ')[0]
         # Join back in case of spaces in away team name
         away = " ".join(teams[1].strip().split(' '))
         away = teams[1].split(' ')[0].strip() # Take first word
