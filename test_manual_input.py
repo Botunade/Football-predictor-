@@ -14,8 +14,8 @@ async def test_manual_input_parsing():
     mock_context = MagicMock()
 
     # Mock internal methods to avoid API calls during test
-    with patch('full_data_pipeline.scrape_understat_team') as mock_scrape, \
-         patch('full_data_pipeline.fetch_player_info') as mock_player, \
+    with patch('full_data_pipeline.scrape_understat_team_async', new_callable=AsyncMock) as mock_scrape, \
+         patch('full_data_pipeline.fetch_player_info', new_callable=AsyncMock) as mock_player, \
          patch('v3_prediction_model.predict_match') as mock_predict:
 
         mock_scrape.return_value = {"xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 50.0}

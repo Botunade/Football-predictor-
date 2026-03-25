@@ -19,17 +19,20 @@ async def extract_sporty_code(code: str, retries: int = 2) -> List[Dict]:
 
                 # 2. Open betslip panel
                 # (Update selector based on actual site button)
-                betslip_button = await page.query_selector("button[data-testid='load-betslip']")
+                betslip_button = await page.query_selector("button[data-testid='load-betslip'], .m-betslip-btn")
                 if betslip_button:
                     await betslip_button.click()
                     await page.wait_for_timeout(2000)
+                else:
+                    print("[Extractor] Betslip button not found, trying fallback...")
 
                 # 3. Enter the code
-                code_input = await page.query_selector("input[data-testid='betslip-code-input']")
-                submit_button = await page.query_selector("button[data-testid='betslip-submit']")
+                code_input = await page.query_selector("input[data-testid='betslip-code-input'], .m-betslip-input")
+                submit_button = await page.query_selector("button[data-testid='betslip-submit'], .m-betslip-submit")
+
                 if not code_input or not submit_button:
-                    print("[Extractor] Betslip input or submit not found!")
-                    # Optional: fallback to direct URL if data-testid not present
+                    print("[Extractor] Betslip input or submit not found! Using direct URL fallback...")
+                    # Fallback to direct URL if data-testid not present
                     await page.goto(f"https://www.sportybet.com/ng/bet-code/{code}", timeout=60000)
                     await page.wait_for_timeout(5000)
                 else:

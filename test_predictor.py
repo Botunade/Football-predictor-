@@ -1,8 +1,14 @@
 import unittest
-from unittest.mock import patch, MagicMock
+import asyncio
+from unittest.mock import patch, MagicMock, AsyncMock
 import pandas as pd
 from full_data_pipeline import build_dataset, compute_context
 from v3_prediction_model import predict_match
+
+def async_test(f):
+    def wrapper(*args, **kwargs):
+        return asyncio.run(f(*args, **kwargs))
+    return wrapper
 
 class TestFootballPredictor(unittest.TestCase):
 
@@ -27,9 +33,10 @@ class TestFootballPredictor(unittest.TestCase):
         # 1/2.0 = 0.5 implied prob
         self.assertEqual(prediction["h2h"]["implied_probability"], 0.5)
 
-    @patch('full_data_pipeline.scrape_understat_team')
-    @patch('full_data_pipeline.fetch_player_info')
-    def test_build_dataset(self, mock_player, mock_understat):
+    @patch('full_data_pipeline.scrape_understat_team_async', new_callable=AsyncMock)
+    @patch('full_data_pipeline.fetch_player_info', new_callable=AsyncMock)
+    @async_test
+    async def test_build_dataset(self, mock_player, mock_understat):
         mock_understat.return_value = {
             "xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 52.0
         }
@@ -46,7 +53,7 @@ class TestFootballPredictor(unittest.TestCase):
             "league": {"id": 39, "season": 2024}
         }]
 
-        df = build_dataset(fixtures)
+        df = await build_dataset(fixtures)
         self.assertIsInstance(df, pd.DataFrame)
         self.assertEqual(len(df), 1)
         self.assertEqual(df.iloc[0]["home_team"], "Team A")
