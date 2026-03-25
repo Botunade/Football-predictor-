@@ -47,6 +47,11 @@ def determine_status(start_time: str, end_time: str = None) -> str:
         print(f"[Status Error] {e}")
         return "unknown"
 
+def escape_markdown(text: str) -> str:
+    """Escape special characters for Telegram Markdown."""
+    # Simple escape for Markdown V1 which is often used with parse_mode="Markdown"
+    return text.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+
 def format_matches_with_status_and_odds(games: list) -> str:
     """Format games for Telegram display with status and odds."""
     if not games:
@@ -54,9 +59,13 @@ def format_matches_with_status_and_odds(games: list) -> str:
 
     messages = ["📊 *SportyBet Matches*:"]
     for i, game in enumerate(games, 1):
+        home = escape_markdown(game['home_team'])
+        away = escape_markdown(game['away_team'])
+        status = escape_markdown(game['status'])
+
         msg = (
-            f"{i}. {game['home_team']} vs {game['away_team']} | "
-            f"Status: {game['status']} | "
+            f"{i}. {home} vs {away} | "
+            f"Status: {status} | "
             f"Odds: {game.get('odds_home', 'N/A')} | "
             f"{game.get('odds_draw', 'N/A')} | "
             f"{game.get('odds_away', 'N/A')}"
@@ -70,12 +79,16 @@ def format_telegram_message(prediction: dict) -> str:
     btts = prediction.get("btts", {})
     o25 = prediction.get("over_25", {})
 
+    match_name = escape_markdown(h2h.get('match', 'N/A'))
+    outcome = escape_markdown(h2h.get('outcome', 'N/A'))
+    bet_code = escape_markdown(h2h.get('betting_code', 'N/A'))
+
     msg = (
-        f"⚽ *Match*: {h2h.get('match', 'N/A')}\n"
-        f"🏆 *Outcome*: {h2h.get('outcome', 'N/A')}\n"
+        f"⚽ *Match*: {match_name}\n"
+        f"🏆 *Outcome*: {outcome}\n"
         f"📈 *Confidence*: {h2h.get('model_probability', 0)*100:.1f}%\n"
         f"💰 *Value*: {h2h.get('value', 0):.3f}\n"
-        f"🎫 *Code*: `{h2h.get('betting_code', 'N/A')}`\n\n"
+        f"🎫 *Code*: `{bet_code}`\n\n"
         f"✨ *Other Markets*:\n"
         f"• BTTS: {btts.get('model_probability', 0)*100:.1f}% (Val: {btts.get('value', 0):.2f})\n"
         f"• Over 2.5: {o25.get('model_probability', 0)*100:.1f}% (Val: {o25.get('value', 0):.2f})"
@@ -93,9 +106,13 @@ async def background_analysis(games: list):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_chat.id) != CHAT_ID: return
     await update.message.reply_text(
-        "🚀 Multi-Sport Predictor V3 is active!\n\n"
-        "Use `/sporty <code>` to analyze a SportyBet betslip.\n"
-        "Example: `/sporty BC123XYZ`"
+        "🚀 *Multi-Sport Predictor V3* is active!\n\n"
+        "I can analyze SportyBet betslips and manual match inputs.\n\n"
+        "*Commands*:\n"
+        "• `/sporty <code>` - Extract and analyze a SportyBet booking code.\n"
+        "• `Sport | Home vs Away | OddsH | [OddsD] | OddsA` - Manual match analysis.\n\n"
+        "Example: `Football | Arsenal vs Chelsea | 1.85 | 3.40 | 4.20`",
+        parse_mode="Markdown"
     )
 
 async def handle_sporty_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -140,7 +157,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     parts = [p.strip() for p in text.split("|")]
     if len(parts) < 3:
-        await update.message.reply_text("❌ Invalid format. Use: `Sport | Home vs Away | OddsH | OddsD | OddsA`")
+        await update.message.reply_text("❌ Invalid format. Use: `Sport | Home vs Away | OddsH | [OddsD] | OddsA`")
         return
 
     sport = parts[0].lower()
@@ -151,9 +168,21 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     home_team, away_team = teams
     try:
-        odds_home = float(parts[2])
-        odds_draw = float(parts[3]) if len(parts) > 3 else 0.0
-        odds_away = float(parts[4]) if len(parts) > 4 else 0.0
+        if len(parts) == 3:
+            # Only 1 odds provided? Assuming home? Unlikely but handling.
+            odds_home = float(parts[2])
+            odds_draw = 0.0
+            odds_away = 0.0
+        elif len(parts) == 4:
+            # Sport | Teams | OddsH | OddsA (common for Basketball/Hockey)
+            odds_home = float(parts[2])
+            odds_draw = 0.0
+            odds_away = float(parts[3])
+        else:
+            # Sport | Teams | OddsH | OddsD | OddsA
+            odds_home = float(parts[2])
+            odds_draw = float(parts[3])
+            odds_away = float(parts[4])
     except ValueError:
         await update.message.reply_text("❌ Invalid odds. Please use numbers.")
         return
@@ -169,10 +198,13 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         "odds_away": odds_away
     }
 
-    features = build_features(fixture_mock, sport=sport)
-    prediction = predict_match(features, sport=sport)
-
-    await update.message.reply_text(format_telegram_message(prediction), parse_mode="Markdown")
+    try:
+        features = build_features(fixture_mock, sport=sport)
+        prediction = predict_match(features, sport=sport)
+        await update.message.reply_text(format_telegram_message(prediction), parse_mode="Markdown")
+    except Exception as e:
+        print(f"[Manual Input Error] {e}")
+        await update.message.reply_text("❌ Error during analysis. Please check your input format.")
 
 async def scheduled_task(context: ContextTypes.DEFAULT_TYPE):
     """Run automated analysis every 12 hours."""
