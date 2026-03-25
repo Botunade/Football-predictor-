@@ -2,11 +2,20 @@ import pandas as pd
 import time
 import os
 import asyncio
+import logging
 from datetime import datetime
 from telegram import Bot, Update
+from telegram.error import TimedOut, NetworkError
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 from verify_creds import verify_creds
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # === IMPORT YOUR MODULES / SCRIPTS ===
 from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset, build_features
@@ -35,16 +44,36 @@ except Exception as e:
     print(f"Warning: Could not initialize Telegram Bot. {e}")
     bot = None
 
-# Helper function to send async message
-async def send_telegram_message(message):
+# Helper function to send async message with retries
+async def send_telegram_message(message, retries=3):
     if not bot:
-        print(f"Bot not initialized. Message: {message}")
+        logger.warning(f"Bot not initialized. Message: {message}")
         return
-    try:
-        async with bot:
-            await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='Markdown')
-    except Exception as e:
-        print(f"Telegram error: {e}")
+
+    for attempt in range(retries):
+        try:
+            async with bot:
+                await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='Markdown')
+            return
+        except TimedOut:
+            logger.warning(f"Timeout sending message (Attempt {attempt+1}/{retries}). Retrying...")
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.error(f"Telegram error sending message: {e}")
+            break
+
+async def safe_reply_text(update: Update, text: str, parse_mode='Markdown', retries=3):
+    """Safely reply to a message with retry logic for timeouts."""
+    for attempt in range(retries):
+        try:
+            await update.message.reply_text(text, parse_mode=parse_mode)
+            return
+        except TimedOut:
+            logger.warning(f"Timeout replying to message (Attempt {attempt+1}/{retries}). Retrying...")
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.error(f"Error in safe_reply_text: {e}")
+            break
 
 def format_telegram_message(results):
     """
@@ -117,12 +146,12 @@ async def run_version3_pipeline(league_id, season, sport="football"):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_chat.id) != CHAT_ID:
         return
-    await update.message.reply_text(
+    await safe_reply_text(
+        update,
         "🚀 *Multi-Sport Predictor V3* is active!\n\n"
         "Send match data in this format to analyze:\n"
         "`Sport | HomeTeam vs AwayTeam | OddsHome | OddsDraw | OddsAway | OptionalScrapeURL` (Draw is optional for non-football)\n"
-        "Example: `Football | Arsenal vs Chelsea | 2.1 | 3.5 | 3.2`",
-        parse_mode='Markdown'
+        "Example: `Football | Arsenal vs Chelsea | 2.1 | 3.5 | 3.2`"
     )
 
 async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,15 +168,15 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Check for Booking Code input
     if text.startswith("CODE |"):
         booking_code = text.split("|")[1].strip()
-        await update.message.reply_text(f"⏳ Extracting matches from SportyBet code: `{booking_code}`...", parse_mode='Markdown')
+        await safe_reply_text(update, f"⏳ Extracting matches from SportyBet code: `{booking_code}`...")
 
         extracted_matches = await extract_booking_code_data(booking_code)
 
         if not extracted_matches:
-            await update.message.reply_text("❌ Invalid or expired booking code, or no matches found.")
+            await safe_reply_text(update, "❌ Invalid or expired booking code, or no matches found.")
             return
 
-        await update.message.reply_text(f"✅ Extracted {len(extracted_matches)} matches. Analyzing...")
+        await safe_reply_text(update, f"✅ Extracted {len(extracted_matches)} matches. Analyzing...")
 
         results = []
         for match in extracted_matches:
@@ -188,9 +217,9 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if results:
             message = format_telegram_message(results)
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await safe_reply_text(update, message)
         else:
-            await update.message.reply_text("No high-value bets identified from this code.")
+            await safe_reply_text(update, "No high-value bets identified from this code.")
         return
 
     try:
@@ -224,7 +253,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 raise ValueError(f"{sport.capitalize()} requires 2 odds (H|A)")
             odds_a = float(parts[3])
 
-        await update.message.reply_text(f"⏳ *Automated Analysis:* {home_team} vs {away_team} ({sport.capitalize()})...", parse_mode='Markdown')
+        await safe_reply_text(update, f"⏳ *Automated Analysis:* {home_team} vs {away_team} ({sport.capitalize()})...")
 
         from full_data_pipeline import scrape_understat_team, scrape_advanced_stats
 
@@ -274,10 +303,21 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         }
 
         message = format_telegram_message([result])
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await safe_reply_text(update, message)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+        await safe_reply_text(update, f"❌ Error: {str(e)}")
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a Telegram message to notify the developer."""
+    logger.error(f"Exception while handling an update: {context.error}")
+
+    # Notify the authorized chat about the internal error
+    try:
+        error_msg = f"⚠️ *Internal Bot Error:*\n`{str(context.error)[:1000]}`"
+        await bot.send_message(chat_id=CHAT_ID, text=error_msg, parse_mode='Markdown')
+    except Exception as e:
+        logger.error(f"Failed to send error notification: {e}")
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -285,10 +325,10 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         league_id = int(context.args[1]) if len(context.args) > 1 else 39
         season = int(context.args[2]) if len(context.args) > 2 else 2024
 
-        await update.message.reply_text(f"⏳ Running {sport} pipeline for League {league_id}, Season {season}...")
+        await safe_reply_text(update, f"⏳ Running {sport} pipeline for League {league_id}, Season {season}...")
         await run_version3_pipeline(league_id, season, sport)
     except (IndexError, ValueError):
-        await update.message.reply_text("❌ Usage: /predict <sport> <league_id> <season>\nExample: /predict football 39 2024")
+        await safe_reply_text(update, "❌ Usage: /predict <sport> <league_id> <season>\nExample: /predict football 39 2024")
 
 # === SCHEDULER / MAIN LOOP ===
 async def scheduler_task(league_id, season, interval, sport="football"):
@@ -313,12 +353,20 @@ def telegram_bot_handler():
     return application
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # Build application with increased timeout
+    app = ApplicationBuilder() \
+        .token(TELEGRAM_TOKEN) \
+        .read_timeout(30) \
+        .connect_timeout(30) \
+        .build()
 
     # Add handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("predict", predict_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
+
+    # Add global error handler
+    app.add_error_handler(error_handler)
 
     print("Bot is running and listening for commands...")
     # run_polling() internally handles the asyncio loop creation or reuse
