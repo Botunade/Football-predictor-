@@ -6,4 +6,3 @@ xgboost
 python-telegram-bot
 python-dotenv
 playwright
-# Note: After installing, run 'playwright install chromium --with-deps'

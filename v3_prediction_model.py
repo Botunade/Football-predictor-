@@ -95,7 +95,6 @@ def predict_match(features, sport="football"):
     value_home = model_prob_home - implied_prob_home
 
     # BTTS Prediction (Simplified Mock Logic)
-    # In a real scenario, this would use a separate trained model
     btts_prob = (features.get("home_xG", 1.5) + features.get("away_xG", 1.5)) / 4.0
     btts_prob = min(max(btts_prob, 0.1), 0.9)
 
@@ -106,8 +105,6 @@ def predict_match(features, sport="football"):
     else:
         implied_prob_btts = 0
         value_btts = -1 # Disable market if no odds
-    implied_prob_btts = 1 / odds_btts if odds_btts and odds_btts > 0 else 0
-    value_btts = btts_prob - implied_prob_btts
 
     # Over 2.5 Prediction (Simplified Mock Logic)
     over_25_prob = (features.get("home_xG", 1.5) + features.get("away_xG", 1.5)) / 3.5
@@ -120,8 +117,6 @@ def predict_match(features, sport="football"):
     else:
         implied_prob_over_25 = 0
         value_over_25 = -1 # Disable market if no odds
-    implied_prob_over_25 = 1 / odds_over_25 if odds_over_25 and odds_over_25 > 0 else 0
-    value_over_25 = over_25_prob - implied_prob_over_25
 
     match_str = f"{features['home_team']} vs {features['away_team']}"
     bet_code = match_str.replace(' ', '_').upper()

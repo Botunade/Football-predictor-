@@ -1,5 +1,0 @@
-requests
-beautifulsoup4
-selenium
-python-telegram-bot
-python-dotenv
