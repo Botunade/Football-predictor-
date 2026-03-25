@@ -312,7 +312,7 @@ def telegram_bot_handler():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     return application
 
-async def main():
+def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     # Add handlers
@@ -320,9 +320,9 @@ async def main():
     app.add_handler(CommandHandler("predict", predict_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
 
-    async with app:
-        print("Bot is running and listening for commands...")
-        await app.run_polling()
+    print("Bot is running and listening for commands...")
+    # run_polling() internally handles the asyncio loop creation or reuse
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
