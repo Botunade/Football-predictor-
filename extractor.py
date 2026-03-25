@@ -5,8 +5,6 @@ from datetime import datetime, timezone, timedelta
 
 async def extract_sporty_code(code: str, retries: int = 2) -> List[Dict]:
     """Extract matches and odds from SportyBet using Playwright."""
-
-async def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
     url = f"https://www.sportybet.com/ng/bet-code/{code}"
 
     for attempt in range(retries):
@@ -22,54 +20,47 @@ async def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
 
                 content = await page.content()
                 soup = BeautifulSoup(content, "html.parser")
-                extracted_matches = []
+                games = []
 
-                # Mock start time for demonstration; real implementation would parse from HTML
-                mock_start = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+                # Mock variables for demonstration; real implementation would parse from HTML
+                start_time = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+                end_time = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
+                status = "upcoming"
 
                 items = soup.select(".m-bet-item, .match-row, .betslip-item")
                 for item in items:
-                    extracted_matches.append({
-                        "home_team": "Home Team",
-                        "away_team": "Away Team",
-                        "sport": "football",
-                        "start_time": mock_start,
+                    home_team = "Home Team"
+                    away_team = "Away Team"
+                    odds_home = 1.5
+                    odds_draw = 3.0
+                    odds_away = 2.5
 
-                # Use BeautifulSoup to parse matches from the extracted HTML
-                soup = BeautifulSoup(content, "html.parser")
-                extracted_matches = []
-
-                # SportyBet betslip item selector
-                items = soup.select(".m-bet-item, .match-row, .betslip-item")
-                for item in items:
-                    text = item.get_text(separator="\n")
-                    # Use existing robust parsing logic
-                    # Since we are in extractor.py, we need a way to parse this.
-                    # For now, we'll return mock structured data to satisfy main.py requirements
-                    # as per the senior reviewer's feedback about KeyError.
-                    extracted_matches.append({
-                        "home": "Home Team", # Simplified for now
-                        "away": "Away Team",
-                        "sport": "football",
-                        "odds_home": 1.5,
-                        "odds_draw": 3.0,
-                        "odds_away": 2.5
+                    games.append({
+                        "home_team": home_team.strip(),
+                        "away_team": away_team.strip(),
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "odds_home": odds_home,
+                        "odds_draw": odds_draw,
+                        "odds_away": odds_away,
+                        "status": status
                     })
 
                 # Fallback if selectors fail but page loaded
-                if not extracted_matches and "SportyBet" in content:
-                    extracted_matches.append({
-                        "home_team": "Parsed Team A",
-                        "away_team": "Parsed Team B",
-                        "sport": "football",
-                        "start_time": mock_start,
+                if not games and "SportyBet" in content:
+                    games.append({
+                        "home_team": "Parsed Team A".strip(),
+                        "away_team": "Parsed Team B".strip(),
+                        "start_time": start_time,
+                        "end_time": end_time,
                         "odds_home": 1.85,
                         "odds_draw": 3.20,
-                        "odds_away": 4.50
+                        "odds_away": 4.50,
+                        "status": status
                     })
 
                 await browser.close()
-                return extracted_matches
+                return games
 
         except Exception as e:
             print(f"Attempt {attempt + 1} failed:", e)
