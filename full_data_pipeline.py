@@ -50,6 +50,7 @@ def fetch_api_data(sport, endpoint, params=None):
     # Use the hardcoded API key as requested to ensure connectivity
     headers = {"x-apisports-key": "70f8be2450bf95286d032207213a0ff8"}
 
+    headers = {"x-apisports-key": config["api_key"]}
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         if response.status_code == 200:
