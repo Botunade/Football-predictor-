@@ -7,7 +7,14 @@ from dotenv import load_dotenv
 from extractor_lite import extract_booking_code_data_lite
 from pipeline_lite import build_features_lite
 from model_lite import predict_match_lite
+from dotenv import load_dotenv
+import os
 
+load_dotenv(dotenv_path=".env")
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+print("DEBUG TOKEN:", TELEGRAM_TOKEN)
 # Explicitly load from .env for Termux compatibility
 load_dotenv(dotenv_path=".env", override=True)
 
