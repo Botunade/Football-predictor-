@@ -145,6 +145,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(f"⏳ Extracting matches from SportyBet code: `{booking_code}`...", parse_mode='Markdown')
 
         extracted_matches = await extract_booking_code_data(booking_code)
+        extracted_matches = extract_booking_code_data(booking_code)
 
         if not extracted_matches:
             await update.message.reply_text("❌ Invalid or expired booking code, or no matches found.")
@@ -169,6 +170,15 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 }
 
                 # 2. Build features
+                # We mock the API part for build_features if not found
+                pseudo_fixture = {
+                    "home_team": match["home"],
+                    "away_team": match["away"],
+                    "sport": match["sport"]
+                }
+
+                # 2. Build features
+                # Note: build_features in full_data_pipeline needs home/away names
                 features = build_features(pseudo_fixture, match["sport"])
 
                 # 3. Add extracted odds
@@ -332,6 +342,11 @@ async def main():
     # INTERVAL = 12 * 60 * 60
 
     # asyncio.create_task(scheduler_task(LEAGUE_ID, SEASON, INTERVAL, "football"))
+    LEAGUE_ID = 39
+    SEASON = 2024
+    INTERVAL = 12 * 60 * 60
+
+    asyncio.create_task(scheduler_task(LEAGUE_ID, SEASON, INTERVAL, "football"))
 
     print("Bot is running and listening for commands...")
     async with application:
