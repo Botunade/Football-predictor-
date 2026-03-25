@@ -1,17 +1,16 @@
 import os
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 from pathlib import Path
 
-# Reference values placeholders
+# Reference placeholders (for warnings only)
 REF_TOKEN = os.getenv("REF_TELEGRAM_TOKEN", "your_token_here")
 REF_CHAT_ID = os.getenv("REF_CHAT_ID", "your_chat_id_here")
 
 # .env path
 ENV_PATH = Path("./.env")
 
-def verify_and_correct_creds():
-    """Checks and corrects TELEGRAM_TOKEN and CHAT_ID in the .env file."""
-    # Load existing .env if present
+def verify_creds():
+    """Checks TELEGRAM_TOKEN and CHAT_ID in .env without overwriting."""
     if ENV_PATH.exists():
         load_dotenv(dotenv_path=ENV_PATH)
         current_token = os.getenv("TELEGRAM_TOKEN")
@@ -20,31 +19,20 @@ def verify_and_correct_creds():
         current_token = None
         current_chat = None
 
-    needs_reload = False
-
     # Check token
-    if current_token != REF_TOKEN:
-        print(f"[!] TELEGRAM_TOKEN mismatch or missing. Updating to reference value.")
-        ENV_PATH.touch(exist_ok=True)  # create if not exist
-        set_key(str(ENV_PATH), "TELEGRAM_TOKEN", REF_TOKEN)
-        needs_reload = True
+    if not current_token or current_token == REF_TOKEN:
+        print(f"[!] TELEGRAM_TOKEN is missing or placeholder. Please set your real token in .env.")
     else:
-        print(f"[✓] TELEGRAM_TOKEN is correct.")
+        print(f"[✓] TELEGRAM_TOKEN is set correctly.")
 
     # Check chat ID
-    if current_chat != REF_CHAT_ID:
-        print(f"[!] CHAT_ID mismatch or missing. Updating to reference value.")
-        ENV_PATH.touch(exist_ok=True)
-        set_key(str(ENV_PATH), "CHAT_ID", REF_CHAT_ID)
-        needs_reload = True
+    if not current_chat or current_chat == REF_CHAT_ID:
+        print(f"[!] CHAT_ID is missing or placeholder. Please set your real chat ID in .env.")
     else:
-        print(f"[✓] CHAT_ID is correct.")
+        print(f"[✓] CHAT_ID is set correctly.")
 
-    if needs_reload:
-        load_dotenv(dotenv_path=ENV_PATH, override=True)
-
-    print(f"Final TELEGRAM_TOKEN: {os.getenv('TELEGRAM_TOKEN')}")
-    print(f"Final CHAT_ID: {os.getenv('CHAT_ID')}")
+    print(f"Current TELEGRAM_TOKEN: {current_token}")
+    print(f"Current CHAT_ID: {current_chat}")
 
 if __name__ == "__main__":
-    verify_and_correct_creds()
+    verify_creds()

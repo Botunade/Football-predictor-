@@ -6,10 +6,7 @@ from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from verify_creds import verify_and_correct_creds
-
-# Auto-verify credentials before starting
-verify_and_correct_creds()
+from verify_creds import verify_creds
 
 # === IMPORT YOUR MODULES / SCRIPTS ===
 from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset, build_features
@@ -17,19 +14,19 @@ from v3_prediction_model import predict_match
 from extractor import extract_booking_code_data
 
 # === LOAD ENV VARS ===
-# Explicitly load from .env for Termux compatibility
-load_dotenv(dotenv_path=".env", override=True)
+load_dotenv()
 
+# Verify credentials
+verify_creds()
+
+# Fetch from environment
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# Token Validation
-if not TELEGRAM_TOKEN or len(TELEGRAM_TOKEN) < 10:
-    print(f"❌ ERROR: Invalid or missing TELEGRAM_TOKEN in .env file.")
-    print(f"Current Value: '{TELEGRAM_TOKEN}'")
+# Check token and chat ID before starting
+if TELEGRAM_TOKEN in (None, "", "your_token_here") or CHAT_ID in (None, "", "your_chat_id_here"):
+    print("[!] Telegram token or chat ID is not properly set. Exiting.")
     exit(1)
-
-print(f"DEBUG TOKEN: {TELEGRAM_TOKEN[:5]}...{TELEGRAM_TOKEN[-5:]}")
 
 # Initialize bot
 try:
@@ -316,32 +313,16 @@ def telegram_bot_handler():
     return application
 
 async def main():
-    # Build application
-    application = telegram_bot_handler()
-    if not application:
-        return
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     # Add handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("predict", predict_command))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("predict", predict_command))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
 
-    # Start the scheduler as a background task
-    # LEAGUE_ID = 39
-    # SEASON = 2024
-    # INTERVAL = 12 * 60 * 60
-
-    # asyncio.create_task(scheduler_task(LEAGUE_ID, SEASON, INTERVAL, "football"))
-
-    print("Bot is running and listening for commands...")
-    async with application:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-
-        # Keep the main loop alive
-        while True:
-            await asyncio.sleep(3600)
+    async with app:
+        print("Bot is running and listening for commands...")
+        await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
