@@ -2,6 +2,7 @@ import time
 import random
 import os
 import re
+import asyncio
 from typing import List, Dict
 from dotenv import load_dotenv
 
@@ -16,6 +17,7 @@ CHROMIUM_PATH = os.getenv("CHROMIUM_PATH", "/data/data/com.termux/files/usr/bin/
 FIREFOX_PATH = os.getenv("FIREFOX_PATH", "/data/data/com.termux/files/usr/bin/firefox")
 GECKODRIVER_PATH = os.getenv("GECKODRIVER_PATH", "/data/data/com.termux/files/usr/bin/geckodriver")
 
+async def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
 def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
     """
     Unified extractor supporting both Playwright and Selenium.
@@ -24,6 +26,7 @@ def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
     for attempt in range(retries + 1):
         try:
             if USE_PLAYWRIGHT:
+                return await _extract_with_playwright(code)
                 return _extract_with_playwright(code)
             elif USE_SELENIUM:
                 return _extract_with_selenium(code)
@@ -33,6 +36,14 @@ def extract_booking_code_data(code: str, retries: int = 2) -> List[Dict]:
         except Exception as e:
             print(f"Extraction attempt {attempt + 1} failed: {e}")
             if attempt < retries:
+                await asyncio.sleep(random.uniform(5, 10))
+    return []
+
+async def _extract_with_playwright(code: str) -> List[Dict]:
+    from playwright.async_api import async_playwright
+    results = []
+
+    async with async_playwright() as p:
                 time.sleep(random.uniform(5, 10))
     return []
 
@@ -48,6 +59,35 @@ def _extract_with_playwright(code: str) -> List[Dict]:
         if os.path.exists(CHROMIUM_PATH):
             launch_kwargs["executable_path"] = CHROMIUM_PATH
 
+        browser = await p.chromium.launch(**launch_kwargs)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+
+        try:
+            await page.goto("https://www.sportybet.com/ng", timeout=60000)
+            await asyncio.sleep(random.uniform(3, 5))
+
+            input_selector = 'input[placeholder="Booking Code"]'
+            await page.wait_for_selector(input_selector, timeout=20000)
+            await page.fill(input_selector, code)
+
+            await page.get_by_role("button", name="Load").click()
+            await asyncio.sleep(random.uniform(5, 7))
+
+            match_elements = await page.query_selector_all(".m-bet-item, .match-row, .betslip-item")
+            for el in match_elements:
+                inner_text = await el.inner_text()
+                parsed = _parse_raw_text(inner_text)
+                if parsed: results.append(parsed)
+
+        finally:
+            await browser.close()
+
+    return results
+
+async def _extract_with_selenium(code: str) -> List[Dict]:
         browser = p.chromium.launch(**launch_kwargs)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
@@ -80,6 +120,50 @@ def _extract_with_selenium(code: str) -> List[Dict]:
     from selenium.webdriver.firefox.options import Options
     from selenium.webdriver.common.by import By
     from selenium.webdriver.firefox.service import Service
+    import concurrent.futures
+    results = []
+
+    def run_selenium():
+        ff_options = Options()
+        ff_options.add_argument("--headless")
+
+        driver_kwargs = {"options": ff_options}
+        if os.path.exists(GECKODRIVER_PATH):
+            driver_kwargs["service"] = Service(GECKODRIVER_PATH)
+
+        if os.path.exists(FIREFOX_PATH):
+            ff_options.binary_location = FIREFOX_PATH
+
+        driver = webdriver.Firefox(**driver_kwargs)
+        try:
+            driver.get("https://www.sportybet.com/ng")
+            time.sleep(5)
+
+            input_box = driver.find_element(By.XPATH, '//input[@placeholder="Booking Code"]')
+            input_box.send_keys(code)
+
+            try:
+                load_button = driver.find_element(By.XPATH, '//button[contains(text(),"Load")]')
+            except:
+                load_button = driver.find_element(By.CSS_SELECTOR, '.m-btn-load, button.load')
+
+            load_button.click()
+            time.sleep(7)
+
+            match_elements = driver.find_elements(By.CSS_SELECTOR, ".m-bet-item, .match-row, .betslip-item")
+            res = []
+            for el in match_elements:
+                parsed = _parse_raw_text(el.text)
+                if parsed: res.append(parsed)
+            return res
+        finally:
+            driver.quit()
+
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        results = await loop.run_in_executor(pool, run_selenium)
+
+    return results
     results = []
 
     ff_options = Options()
@@ -138,6 +222,8 @@ def _parse_raw_text(text: str) -> Dict:
 
         teams = teams_line.split(' vs ')
         home = teams[0].strip()
+        # Join back in case of spaces in away team name
+        away = " ".join(teams[1].strip().split(' '))
         away = teams[1].split(' ')[0].strip() # Take first word
     else:
         match = re.search(r"(?:^|[:])\s*([^:]+?)\s+vs\s+([^\s]+)", full_text)

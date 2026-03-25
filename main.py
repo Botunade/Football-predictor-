@@ -6,6 +6,10 @@ from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
+from verify_creds import verify_and_correct_creds
+
+# Auto-verify credentials before starting
+verify_and_correct_creds()
 
 # === IMPORT YOUR MODULES / SCRIPTS ===
 from full_data_pipeline import fetch_fixtures, fetch_odds, build_dataset, build_features
@@ -140,6 +144,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         booking_code = text.split("|")[1].strip()
         await update.message.reply_text(f"⏳ Extracting matches from SportyBet code: `{booking_code}`...", parse_mode='Markdown')
 
+        extracted_matches = await extract_booking_code_data(booking_code)
         extracted_matches = extract_booking_code_data(booking_code)
 
         if not extracted_matches:
@@ -152,6 +157,19 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         for match in extracted_matches:
             try:
                 # 1. Map extracted data to our feature builder
+                pseudo_fixture = {
+                    "home_team": match["home"],
+                    "away_team": match["away"],
+                    "sport": match["sport"],
+                    "fixture": {"id": 0},
+                    "league": {"id": 0, "season": 2024},
+                    "teams": {
+                        "home": {"id": 0, "name": match["home"]},
+                        "away": {"id": 0, "name": match["away"]}
+                    }
+                }
+
+                # 2. Build features
                 # We mock the API part for build_features if not found
                 pseudo_fixture = {
                     "home_team": match["home"],
@@ -319,6 +337,11 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
 
     # Start the scheduler as a background task
+    # LEAGUE_ID = 39
+    # SEASON = 2024
+    # INTERVAL = 12 * 60 * 60
+
+    # asyncio.create_task(scheduler_task(LEAGUE_ID, SEASON, INTERVAL, "football"))
     LEAGUE_ID = 39
     SEASON = 2024
     INTERVAL = 12 * 60 * 60

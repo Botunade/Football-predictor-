@@ -100,6 +100,12 @@ def predict_match(features, sport="football"):
     btts_prob = min(max(btts_prob, 0.1), 0.9)
 
     odds_btts = features.get("odds_btts")
+    if odds_btts and odds_btts > 0:
+        implied_prob_btts = 1 / odds_btts
+        value_btts = btts_prob - implied_prob_btts
+    else:
+        implied_prob_btts = 0
+        value_btts = -1 # Disable market if no odds
     implied_prob_btts = 1 / odds_btts if odds_btts and odds_btts > 0 else 0
     value_btts = btts_prob - implied_prob_btts
 
@@ -108,6 +114,12 @@ def predict_match(features, sport="football"):
     over_25_prob = min(max(over_25_prob, 0.1), 0.9)
 
     odds_over_25 = features.get("odds_over_25")
+    if odds_over_25 and odds_over_25 > 0:
+        implied_prob_over_25 = 1 / odds_over_25
+        value_over_25 = over_25_prob - implied_prob_over_25
+    else:
+        implied_prob_over_25 = 0
+        value_over_25 = -1 # Disable market if no odds
     implied_prob_over_25 = 1 / odds_over_25 if odds_over_25 and odds_over_25 > 0 else 0
     value_over_25 = over_25_prob - implied_prob_over_25
 

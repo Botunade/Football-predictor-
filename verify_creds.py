@@ -2,6 +2,9 @@ import os
 from dotenv import load_dotenv, set_key
 from pathlib import Path
 
+# Reference values placeholders
+REF_TOKEN = os.getenv("REF_TELEGRAM_TOKEN", "your_token_here")
+REF_CHAT_ID = os.getenv("REF_CHAT_ID", "your_chat_id_here")
 # Reference values
 REF_TOKEN = "8799260811:AAFNkyF1j-jooGhYu-IQX8xZmirTnAP5IvQ"
 REF_CHAT_ID = "7104386905"
