@@ -2,13 +2,8 @@
 
 A professional-grade automated betting analysis system that identifies high-value opportunities across Football, Basketball, and Hockey. Integrated with Telegram for real-time analysis via manual match input or SportyBet booking codes.
 
-This repository includes two versions:
-1. **Full Version (`main.py`)**: Uses XGBoost and Pandas for heavy-duty analysis.
-2. **Lite Version (`main_lite.py`)**: Optimized for Termux (no pandas/compilation required).
-
 ## 🌟 Key Features
 
-- **Lite Mode for Termux:** Runs flawlessly on mobile via Termux using only native Python structures and Selenium.
 - **Multi-Sport Support:** Optimized pipelines for Football (Premier League, etc.), Basketball (NBA), and Hockey (NHL).
 - **Playwright Booking Reader:** Automatically extracts matches and odds from SportyBet Nigeria using a simple booking code.
 - **Automated Data Pipeline:**
@@ -17,11 +12,10 @@ This repository includes two versions:
   - **Market Analysis:** Integrated with OddsAPI to compute implied probabilities and identify value.
 - **XGBoost Predictive Engine:** Uses a machine learning framework to calculate the probability of outcomes and identifies "Value Bets" (Model Confidence - Market Odds > 8%).
 - **Clean Telegram Interface:**
-  - Automated 12-hour scheduled cycles.
   - Manual trigger via `/predict` command.
   - Real-time analysis of pasted matches or booking codes.
 - **Robustness & Security:**
-  - Headless Playwright with anti-detection flags and randomized delays.
+  - Async Playwright for non-blocking betslip extraction.
   - Strict Telegram authorization (responses restricted to authorized `CHAT_ID`).
   - Modular, scalable codebase for easy feature expansion.
 
@@ -41,19 +35,14 @@ This repository includes two versions:
    ```
 
 2. **Install dependencies:**
-   - For VPS/Linux: `pip install -r requirements.txt`
-   - For Termux: `pip install -r requirements_lite.txt`
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-3. **Install Browsers:**
-   - **For Playwright (Linux/VPS):**
-     ```bash
-     playwright install chromium --with-deps
-     ```
-   - **For Selenium (Termux):**
-     ```bash
-     pkg update -y
-     pkg install firefox geckodriver -y
-     ```
+3. **Install Playwright Browsers:**
+   ```bash
+   playwright install chromium --with-deps
+   ```
 
 4. **Configure Environment:**
    Create a `.env` file based on `.env.example`:
@@ -64,14 +53,9 @@ This repository includes two versions:
 
 ## 🚀 Usage
 
-**Full Version (VPS/Linux):**
+Run the main orchestrator:
 ```bash
 python main.py
-```
-
-**Lite Version (Termux):**
-```bash
-python main_lite.py
 ```
 
 ### Telegram Commands & Formats
@@ -88,9 +72,9 @@ python main_lite.py
 ## 🏗️ System Architecture
 
 1. **`full_data_pipeline.py`**: Handles API interactions and multi-source web scraping.
-2. **`booking_extractor.py`**: Playwright-based automation for SportyBet betslip extraction.
+2. **`extractor.py`**: Pure Async Playwright automation for SportyBet betslip extraction.
 3. **`v3_prediction_model.py`**: Core ML logic, feature scaling, and value detection.
-4. **`main.py`**: Async Telegram bot handlers and background scheduler.
+4. **`main.py`**: Async Telegram bot handlers.
 
 ## 🧪 Testing
 
