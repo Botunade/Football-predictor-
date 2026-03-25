@@ -64,7 +64,7 @@ python main.py
 | :--- | :--- |
 | **Start Bot** | `/start` |
 | **Manual Predict** | `/predict <sport> <league_id> <season>` |
-| **Booking Code Analysis** | `CODE | BC123XYZ` |
+| **Booking Code Analysis** | `/sporty BC123XYZ` |
 | **Manual Match Analysis** | `Sport | TeamA vs TeamB | OddsH | OddsD | OddsA` |
 
 *Note: For non-football sports, the Draw odds (`OddsD`) are optional.*

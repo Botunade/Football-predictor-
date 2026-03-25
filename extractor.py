@@ -9,54 +9,50 @@ async def extract_sporty_code(code: str, retries: int = 2) -> List[Dict]:
 
     for attempt in range(retries):
         try:
-            print(f"Playwright attempt {attempt + 1}...")
-
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
                 page = await browser.new_page()
 
                 await page.goto(url, timeout=60000)
-                await page.wait_for_timeout(5000)
+                await page.wait_for_timeout(5000)  # allow full load
 
                 content = await page.content()
                 soup = BeautifulSoup(content, "html.parser")
                 games = []
 
-                # Mock variables for demonstration; real implementation would parse from HTML
-                start_time = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-                end_time = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
-                status = "upcoming"
-
-                items = soup.select(".m-bet-item, .match-row, .betslip-item")
+                # Parse real match items (update selectors to actual site structure)
+                # SportyBet often uses .m-bet-item or .m-betslip-item
+                items = soup.select(".betslip-item, .m-bet-item, .match-row, .m-betslip-item")
                 for item in items:
-                    home_team = "Home Team"
-                    away_team = "Away Team"
-                    odds_home = 1.5
-                    odds_draw = 3.0
-                    odds_away = 2.5
+                    # Teams: .home-team, .home-team-name, .m-team-name and .away-team, .away-team-name, .m-team-name:last-child
+                    home_team_el = item.select_one(".home-team, .home-team-name, .m-team-name")
+                    away_team_el = item.select_one(".away-team, .away-team-name, .m-team-name:last-child")
+
+                    home_team = home_team_el.text.strip() if home_team_el else "Home Team"
+                    away_team = away_team_el.text.strip() if away_team_el else "Away Team"
+
+                    # Odds: .odds-home, .odds-draw, .odds-away, .m-odds-num
+                    odds_els = item.select(".odds-home, .odds-draw, .odds-away, .m-odds-num")
+                    try:
+                        odds_home = float(odds_els[0].text.strip()) if len(odds_els) > 0 else 1.5
+                        odds_draw = float(odds_els[1].text.strip()) if len(odds_els) > 1 else 3.0
+                        odds_away = float(odds_els[2].text.strip()) if len(odds_els) > 2 else 2.5
+                    except (ValueError, IndexError):
+                        odds_home, odds_draw, odds_away = 1.5, 3.0, 2.5
+
+                    # Timestamps: data-start-time and data-end-time attributes; fallback to current UTC
+                    start_time = item.get("data-start-time") or datetime.now(timezone.utc).isoformat()
+                    end_time = item.get("data-end-time") or datetime.now(timezone.utc).isoformat()
 
                     games.append({
-                        "home_team": home_team.strip(),
-                        "away_team": away_team.strip(),
+                        "home_team": home_team,
+                        "away_team": away_team,
                         "start_time": start_time,
                         "end_time": end_time,
                         "odds_home": odds_home,
                         "odds_draw": odds_draw,
                         "odds_away": odds_away,
-                        "status": status
-                    })
-
-                # Fallback if selectors fail but page loaded
-                if not games and "SportyBet" in content:
-                    games.append({
-                        "home_team": "Parsed Team A".strip(),
-                        "away_team": "Parsed Team B".strip(),
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "odds_home": 1.85,
-                        "odds_draw": 3.20,
-                        "odds_away": 4.50,
-                        "status": status
+                        "status": "upcoming"
                     })
 
                 await browser.close()

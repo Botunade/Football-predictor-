@@ -6,3 +6,4 @@ xgboost
 python-telegram-bot
 python-dotenv
 playwright
+apscheduler
