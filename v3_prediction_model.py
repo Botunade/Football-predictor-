@@ -86,16 +86,22 @@ def predict_match(features, sport="football"):
     X_scaled = scaler.transform(X)
 
     # H2H Probabilities
-    probs = model.predict_proba(X_scaled)[0]
-    model_prob_home = probs[0]
+    probs = model.predict_proba(X_scaled)[0] # [Prob_Home, Prob_Draw, Prob_Away]
 
-    # Value for H2H Home
-    odds_home = features.get("odds_home")
-    implied_prob_home = 1 / odds_home if odds_home and odds_home > 0 else 0
-    value_home = model_prob_home - implied_prob_home
+    outcomes = ["Home", "Draw", "Away"]
+    best_idx = int(np.argmax(probs))
+    model_prob_best = probs[best_idx]
 
-    # BTTS Prediction (Simplified Mock Logic)
-    btts_prob = (features.get("home_xG", 1.5) + features.get("away_xG", 1.5)) / 4.0
+    # Value for H2H based on selected outcome
+    odds_map = {0: "odds_home", 1: "odds_draw", 2: "odds_away"}
+    target_odds = features.get(odds_map[best_idx], 0)
+    implied_prob_best = 1 / target_odds if target_odds and target_odds > 0 else 0
+    value_best = model_prob_best - implied_prob_best
+
+    # Improved BTTS Logic (Accounts for defense via xGA)
+    # Probability increases if Home xG is high AND Away xGA is high
+    btts_prob = (features.get("home_xG", 1.5) * features.get("away_xGA", 1.5) +
+                 features.get("away_xG", 1.5) * features.get("home_xGA", 1.5)) / 6.0
     btts_prob = min(max(btts_prob, 0.1), 0.9)
 
     odds_btts = features.get("odds_btts")
@@ -106,8 +112,9 @@ def predict_match(features, sport="football"):
         implied_prob_btts = 0
         value_btts = -1 # Disable market if no odds
 
-    # Over 2.5 Prediction (Simplified Mock Logic)
-    over_25_prob = (features.get("home_xG", 1.5) + features.get("away_xG", 1.5)) / 3.5
+    # Improved Over 2.5 Prediction
+    over_25_prob = (features.get("home_xG", 1.5) + features.get("away_xG", 1.5) +
+                    features.get("home_xGA", 1.5) + features.get("away_xGA", 1.5)) / 7.0
     over_25_prob = min(max(over_25_prob, 0.1), 0.9)
 
     odds_over_25 = features.get("odds_over_25")
@@ -124,11 +131,11 @@ def predict_match(features, sport="football"):
     return {
         "h2h": {
             "match": match_str,
-            "outcome": "Home",
-            "value": round(value_home, 3),
+            "outcome": outcomes[best_idx],
+            "value": round(value_best, 3),
             "betting_code": bet_code,
-            "model_probability": round(model_prob_home, 3),
-            "implied_probability": round(implied_prob_home, 3)
+            "model_probability": round(model_prob_best, 3),
+            "implied_probability": round(implied_prob_best, 3)
         },
         "btts": {
             "match": match_str,

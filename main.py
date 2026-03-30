@@ -29,7 +29,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 # --- Helper Functions ---
-async def send_message_safe(update: Update, text: str, parse_mode: str = "Markdown", retries: int = 3):
+async def send_message_safe(update: Update, text: str, parse_mode: str = "MarkdownV2", retries: int = 3):
     """Send a Telegram message with retry and exponential backoff for timeouts."""
     for attempt in range(retries):
         try:
@@ -64,27 +64,29 @@ def determine_status(start_time: str, end_time: str = None) -> str:
         return "unknown"
 
 def escape_markdown(text: str) -> str:
-    """Escape special characters for Telegram Markdown."""
-    # Simple escape for Markdown V1 which is often used with parse_mode="Markdown"
-    return text.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+    """Escape special characters for Telegram MarkdownV2."""
+    return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', str(text))
 
 def format_matches_with_status_and_odds(games: list) -> str:
     """Format games for Telegram display with status and odds."""
     if not games:
-        return "❌ Invalid or expired booking code, or no matches found."
+        return escape_markdown("❌ Invalid or expired booking code, or no matches found.")
 
-    messages = ["📊 *SportyBet Matches*:"]
+    messages = [f"📊 *{escape_markdown('SportyBet Matches')}*:"]
     for i, game in enumerate(games, 1):
         home = escape_markdown(game['home_team'])
         away = escape_markdown(game['away_team'])
         status = escape_markdown(game['status'])
+        odds_h = escape_markdown(str(game.get('odds_home', 'N/A')))
+        odds_d = escape_markdown(str(game.get('odds_draw', 'N/A')))
+        odds_a = escape_markdown(str(game.get('odds_away', 'N/A')))
 
         msg = (
-            f"{i}. {home} vs {away} | "
+            f"{i}\\. {home} vs {away} | "
             f"Status: {status} | "
-            f"Odds: {game.get('odds_home', 'N/A')} | "
-            f"{game.get('odds_draw', 'N/A')} | "
-            f"{game.get('odds_away', 'N/A')}"
+            f"Odds: {odds_h} | "
+            f"{odds_d} | "
+            f"{odds_a}"
         )
         messages.append(msg)
     return "\n".join(messages)
@@ -99,15 +101,24 @@ def format_telegram_message(prediction: dict) -> str:
     outcome = escape_markdown(h2h.get('outcome', 'N/A'))
     bet_code = escape_markdown(h2h.get('betting_code', 'N/A'))
 
+    conf = escape_markdown(f"{h2h.get('model_probability', 0)*100:.1f}%")
+    val = escape_markdown(f"{h2h.get('value', 0):.3f}")
+
+    btts_conf = escape_markdown(f"{btts.get('model_probability', 0)*100:.1f}%")
+    btts_val = escape_markdown(f"{btts.get('value', 0):.2f}")
+
+    o25_conf = escape_markdown(f"{o25.get('model_probability', 0)*100:.1f}%")
+    o25_val = escape_markdown(f"{o25.get('value', 0):.2f}")
+
     msg = (
         f"⚽ *Match*: {match_name}\n"
         f"🏆 *Outcome*: {outcome}\n"
-        f"📈 *Confidence*: {h2h.get('model_probability', 0)*100:.1f}%\n"
-        f"💰 *Value*: {h2h.get('value', 0):.3f}\n"
+        f"📈 *Confidence*: {conf}\n"
+        f"💰 *Value*: {val}\n"
         f"🎫 *Code*: `{bet_code}`\n\n"
         f"✨ *Other Markets*:\n"
-        f"• BTTS: {btts.get('model_probability', 0)*100:.1f}% (Val: {btts.get('value', 0):.2f})\n"
-        f"• Over 2.5: {o25.get('model_probability', 0)*100:.1f}% (Val: {o25.get('value', 0):.2f})"
+        f"• BTTS: {btts_conf} (Val: {btts_val})\n"
+        f"• Over 2\\.5: {o25_conf} (Val: {o25_val})"
     )
     return msg
 
@@ -141,7 +152,7 @@ async def handle_sporty_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     code = context.args[0]
-    await send_message_safe(update, f"⏳ Extracting matches from SportyBet code: {code}...")
+    await send_message_safe(update, escape_markdown(f"⏳ Extracting matches from SportyBet code: {code}..."))
 
     try:
         games = await extract_sporty_code(code)
@@ -166,9 +177,10 @@ async def handle_sporty_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
         try:
             # Note: build_features is async in my current pipeline version
             features = await build_features(game, sport="football")
-            prediction = predict_match(features, sport="football")
+            # FIXED: Run heavy ML in a thread to keep the bot responsive
+            prediction = await asyncio.to_thread(predict_match, features, "football")
             msg = format_telegram_message(prediction)
-            await send_message_safe(update, msg, parse_mode="Markdown")
+            await send_message_safe(update, msg, parse_mode="MarkdownV2")
         except Exception as e:
             print(f"[Betslip Analysis Error] {e}")
 
@@ -215,7 +227,7 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         await send_message_safe(update, "❌ Invalid odds. Please use numbers.")
         return
 
-    await send_message_safe(update, f"⏳ Analyzing {home_team} vs {away_team} ({sport})...")
+    await send_message_safe(update, escape_markdown(f"⏳ Analyzing {home_team} vs {away_team} ({sport})..."))
 
     # Build features & Predict
     fixture_mock = {
@@ -228,11 +240,12 @@ async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         features = await build_features(fixture_mock, sport=sport)
-        prediction = predict_match(features, sport=sport)
-        await send_message_safe(update, format_telegram_message(prediction), parse_mode="Markdown")
+        # FIXED: Run heavy ML in a thread to keep the bot responsive
+        prediction = await asyncio.to_thread(predict_match, features, sport)
+        await send_message_safe(update, format_telegram_message(prediction), parse_mode="MarkdownV2")
     except Exception as e:
         print(f"[Manual Input Error] {e}")
-        await send_message_safe(update, "❌ Error during analysis. Please check your input format.")
+        await send_message_safe(update, escape_markdown("❌ Error during analysis. Please check your input format."))
 
 async def scheduled_task(context: ContextTypes.DEFAULT_TYPE):
     """Run automated analysis every 12 hours."""
@@ -245,7 +258,7 @@ async def handle_live_matches(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Fetch and display live matches across all sports."""
     if str(update.effective_chat.id) != CHAT_ID: return
 
-    await send_message_safe(update, "⏳ Fetching live matches across all sports...")
+    await send_message_safe(update, escape_markdown("⏳ Fetching live matches across all sports..."))
 
     try:
         games_summary = []
@@ -275,10 +288,12 @@ async def handle_live_matches(update: Update, context: ContextTypes.DEFAULT_TYPE
                 print(f"[Live Error] Sport index {i} failed: {res}")
 
         if not games_summary:
-            await send_message_safe(update, "❌ No live matches found.")
+            await send_message_safe(update, escape_markdown("❌ No live matches found."))
             return
 
-        await send_message_safe(update, "\n".join(messages + games_summary), parse_mode="Markdown")
+        # Escape labels and messages for MarkdownV2
+        final_msg = escape_markdown("🔥 LIVE MATCHES:\n") + "\n".join([escape_markdown(s) for s in games_summary])
+        await send_message_safe(update, final_msg, parse_mode="MarkdownV2")
 
     except Exception as e:
         print(f"[Live Handler Error] {e}")
