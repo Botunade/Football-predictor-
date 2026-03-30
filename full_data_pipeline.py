@@ -337,11 +337,14 @@ async def build_features(fixture, sport="football", scraped_data=None):
     # 4. Manual overrides
     if scraped_data: features.update(scraped_data)
 
-    # 5. Metadata
+    # 5. Metadata & Odds
     features.update({
         "fixture_id": f_id, "home_team": h_name, "away_team": a_name,
         "home_xGD": features.get("home_xG", 0) - features.get("home_xGA", 0),
-        "away_xGD": features.get("away_xG", 0) - features.get("away_xGA", 0)
+        "away_xGD": features.get("away_xG", 0) - features.get("away_xGA", 0),
+        "odds_home": fixture.get("odds_home", 0.0),
+        "odds_draw": fixture.get("odds_draw", 0.0),
+        "odds_away": fixture.get("odds_away", 0.0)
     })
 
     return features
