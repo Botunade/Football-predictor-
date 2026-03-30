@@ -17,7 +17,7 @@ import telegram.error
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from extractor import extract_sporty_code  # New Playwright extraction
 from verify_creds import verify_creds
-from full_data_pipeline import build_features
+from full_data_pipeline import build_features, fetch_data
 from v3_prediction_model import predict_match
 
 # --- Stage 0: Verify Telegram Credentials ---
@@ -161,7 +161,18 @@ async def handle_sporty_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Send games to Telegram
     await send_message_safe(update, format_matches_with_status_and_odds(games))
 
-    # Run background ML/data analysis
+    # Auto-analysis after extraction
+    for game in games:
+        try:
+            # Note: build_features is async in my current pipeline version
+            features = await build_features(game, sport="football")
+            prediction = predict_match(features, sport="football")
+            msg = format_telegram_message(prediction)
+            await send_message_safe(update, msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"[Betslip Analysis Error] {e}")
+
+    # Run background ML/data analysis (optional persistence/logging)
     asyncio.create_task(background_analysis(games))
 
 async def handle_manual_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -230,6 +241,49 @@ async def scheduled_task(context: ContextTypes.DEFAULT_TYPE):
     # For now, just a placeholder log
     pass
 
+async def handle_live_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fetch and display live matches across all sports."""
+    if str(update.effective_chat.id) != CHAT_ID: return
+
+    await send_message_safe(update, "⏳ Fetching live matches across all sports...")
+
+    try:
+        games_summary = []
+
+        # Parallel fetch for speed
+        results = await asyncio.gather(
+            fetch_data(39, 2024, sport="football"),
+            fetch_data(12, 2024, sport="basketball"),
+            fetch_data(57, 2024, sport="hockey"),
+            return_exceptions=True
+        )
+
+        sports_labels = ["⚽ Football", "🏀 Basketball", "🏒 Hockey"]
+        messages = ["🔥 *LIVE MATCHES*:\n"]
+
+        for i, res in enumerate(results):
+            if isinstance(res, list):
+                count = 0
+                for g in res[:5]: # Limit to top 5 per sport
+                    try:
+                        home = g["teams"]["home"]["name"]
+                        away = g["teams"]["away"]["name"]
+                        games_summary.append(f"{sports_labels[i]}: {home} vs {away}")
+                        count += 1
+                    except: continue
+            else:
+                print(f"[Live Error] Sport index {i} failed: {res}")
+
+        if not games_summary:
+            await send_message_safe(update, "❌ No live matches found.")
+            return
+
+        await send_message_safe(update, "\n".join(messages + games_summary), parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"[Live Handler Error] {e}")
+        await send_message_safe(update, "❌ Failed to fetch live matches.")
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Global error handler to catch uncaught exceptions."""
     print(f"Update {update} caused error {context.error}")
@@ -250,6 +304,7 @@ def main():
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("sporty", handle_sporty_code))
+    app.add_handler(CommandHandler("live", handle_live_matches))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_manual_input))
 
     # Add global error handler
