@@ -125,15 +125,46 @@ async def extract_sporty_code(code: str, retries: int = 3) -> List[Dict]:
                         home_team = (await home_el.inner_text()).strip() if home_el else f"Home_{i+1}"
                         away_team = (await away_el.inner_text()).strip() if away_el else f"Away_{i+1}"
 
-                        # Improved Odds Selectors
-                        odds_els = await item.query_selector_all(".odds, .m-odds-num, .m-bet-odds")
-                        if len(odds_els) >= 2:
-                            odds_home = float((await odds_els[0].inner_text()).strip())
-                            # Handle draw if exists, else 0.0
-                            odds_draw = float((await odds_els[1].inner_text()).strip()) if len(odds_els) > 2 else 0.0
-                            odds_away = float((await odds_els[-1].inner_text()).strip())
-                        else:
-                            odds_home, odds_draw, odds_away = 1.5, 3.0, 2.5 # Defaults
+                        # Improved Odds Selectors (STRICT Extraction)
+                        odds_home = None
+                        odds_draw = None
+                        odds_away = None
+
+                        # Try structured selectors first
+                        h_el = await item.query_selector(".odds-home, .home-odds")
+                        d_el = await item.query_selector(".odds-draw, .draw-odds")
+                        a_el = await item.query_selector(".odds-away, .away-odds")
+
+                        try:
+                            if h_el: odds_home = float((await h_el.inner_text()).strip())
+                            if d_el: odds_draw = float((await d_el.inner_text()).strip())
+                            if a_el: odds_away = float((await a_el.inner_text()).strip())
+                        except:
+                            pass
+
+                        # Fallback: generic odds list (ordered)
+                        if odds_home is None or odds_away is None:
+                            odds_list = await item.query_selector_all(".m-odds-num, .odds, .m-bet-odds")
+                            try:
+                                if len(odds_list) == 2:
+                                    # Basketball/Hockey (no draw)
+                                    odds_home = float((await odds_list[0].inner_text()).strip())
+                                    odds_away = float((await odds_list[1].inner_text()).strip())
+                                    odds_draw = 0.0
+                                elif len(odds_list) >= 3:
+                                    # Football
+                                    odds_home = float((await odds_list[0].inner_text()).strip())
+                                    odds_draw = float((await odds_list[1].inner_text()).strip())
+                                    odds_away = float((await odds_list[2].inner_text()).strip())
+                            except:
+                                pass
+
+                        # FINAL fallback (zeroed if extraction failed completely)
+                        odds_home = odds_home or 0.0
+                        odds_draw = odds_draw or 0.0
+                        odds_away = odds_away or 0.0
+
+                        print(f"[ODDS DEBUG] {home_team} vs {away_team} → {odds_home} | {odds_draw} | {odds_away}")
 
                         # Timestamps
                         start_time = await item.get_attribute("data-start-time") or datetime.now(timezone.utc).isoformat()
