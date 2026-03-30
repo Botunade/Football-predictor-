@@ -232,9 +232,13 @@ async def fetch_odds(sport="football", league_id=39, regions="uk"):
         # Taking the first bookmaker's odds for simplicity
         if match["bookmakers"]:
             outcomes = match["bookmakers"][0]["markets"][0]["outcomes"]
-            h_odds = next(o["price"] for o in outcomes if o["name"] == home_team)
-            a_odds = next(o["price"] for o in outcomes if o["name"] == away_team)
-            d_odds = next(o["price"] for o in outcomes if o["name"] == "Draw")
+            try:
+                h_odds = next(o["price"] for o in outcomes if o["name"] == home_team)
+                a_odds = next(o["price"] for o in outcomes if o["name"] == away_team)
+                d_odds = next((o["price"] for o in outcomes if o["name"] == "Draw"), 0.0)
+            except StopIteration:
+                continue
+
             odds_list.append({
                 "home_team": home_team,
                 "away_team": away_team,

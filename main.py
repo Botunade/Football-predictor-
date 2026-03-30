@@ -29,11 +29,12 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 # --- Helper Functions ---
-async def send_message_safe(update: Update, text: str, parse_mode: str = None, retries: int = 3):
+async def send_message_safe(update: Update, text: str, parse_mode: str = "Markdown", retries: int = 3):
     """Send a Telegram message with retry and exponential backoff for timeouts."""
     for attempt in range(retries):
         try:
-            return await update.message.reply_text(text, parse_mode=parse_mode, timeout=30)
+            # Note: PTB v20+ handles timeouts via the ApplicationBuilder/Bot initialization
+            return await update.message.reply_text(text, parse_mode=parse_mode)
         except telegram.error.TimedOut:
             wait_time = (attempt + 1) * 5
             print(f"[Telegram Timeout] Attempt {attempt+1} failed. Retrying in {wait_time}s...")
@@ -239,8 +240,8 @@ def main():
         print("Error: TELEGRAM_TOKEN is missing in .env")
         return
 
-    # Increase request timeout in the application builder
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).read_timeout(30).write_timeout(30).build()
+    # Increase request timeout in the application builder via get_updates_read_timeout
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).get_updates_read_timeout(30).build()
 
     # Add JobQueue for 12-hour scheduling
     job_queue = app.job_queue
