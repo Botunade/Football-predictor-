@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+from difflib import get_close_matches
 import pandas as pd
 from bs4 import BeautifulSoup
 import os
@@ -41,11 +42,12 @@ SCRAPE_URLS = {
     "hockey": os.getenv("HOCKEY_SCRAPE_URLS", "https://www.hockey-reference.com/").split(",")
 }
 
-# Async client for network calls
+# Async client and Semaphore for rate limiting
 async_client = httpx.AsyncClient(timeout=10)
+API_SEMAPHORE = asyncio.Semaphore(3)
 
 async def fetch_api_data(sport, endpoint, params=None):
-    """Fetch data from API-Sports asynchronously with safe response handling."""
+    """Fetch data from API-Sports asynchronously with safe response handling and rate limiting."""
     if sport not in SPORTS_CONFIG:
         print(f"Error: Sport {sport} not supported.")
         return None
@@ -55,7 +57,8 @@ async def fetch_api_data(sport, endpoint, params=None):
     headers = {"x-apisports-key": API_KEY}
 
     try:
-        response = await async_client.get(url, headers=headers, params=params)
+        async with API_SEMAPHORE:
+            response = await async_client.get(url, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()
         if not data or "response" not in data:
@@ -137,13 +140,13 @@ async def scrape_understat_team_async(team_name, season):
             return data
 
     # Mapping for common team names
-    mapping = {
-        "Manchester United": "Manchester_United",
-        "Manchester City": "Manchester_City",
-        "Tottenham Hotspur": "Tottenham",
-        "Newcastle United": "Newcastle_United"
-    }
-    search_name = mapping.get(team_name, team_name.replace(" ", "_"))
+    known_understat_teams = [
+        "Manchester United", "Manchester City", "Tottenham", "Newcastle United",
+        "Chelsea", "Arsenal", "Liverpool", "Aston Villa", "Everton"
+    ]
+
+    normalized_name = normalize_team_name(team_name, known_understat_teams)
+    search_name = normalized_name.replace(" ", "_")
     url = f"https://understat.com/team/{search_name}/{season}"
 
     async with httpx.AsyncClient(timeout=10) as client:
@@ -179,6 +182,11 @@ async def scrape_understat_team_async(team_name, season):
         "xG": 1.5, "xGA": 1.2, "xGD": 0.3, "NPxG": 1.4, "PPDA": 10.5, "possession": 50.0
     }
 
+def normalize_team_name(input_name, known_names):
+    """Fuzzy match team names to normalization list."""
+    match = get_close_matches(input_name, known_names, n=1, cutoff=0.6)
+    return match[0] if match else input_name
+
 def scrape_understat_team(team_name, season):
     """Alias for async version to avoid breaking tests during transition (will be deprecated)."""
     # NOTE: This still has the blocking problem if called from within an async loop.
@@ -206,10 +214,9 @@ async def fetch_player_info(team_id, league_id=39, season=2024, sport="football"
     }
 
 async def fetch_odds(sport="football", league_id=39, regions="uk"):
-    """Fetch odds from OddsAPI with sport mapping."""
-    # OddsAPI sport mapping
+    """Fetch odds from OddsAPI with sport mapping and rate limiting."""
     mapping = {
-        "football": "soccer_epl", # Default to EPL, could be refined by league_id
+        "football": "soccer_epl",
         "basketball": "basketball_nba",
         "hockey": "icehockey_nhl"
     }
@@ -222,7 +229,8 @@ async def fetch_odds(sport="football", league_id=39, regions="uk"):
         "markets": "h2h",
         "oddsFormat": "decimal"
     }
-    response = await async_client.get(url, params=params)
+    async with API_SEMAPHORE:
+        response = await async_client.get(url, params=params)
     data = response.json()
 
     odds_list = []

@@ -14,9 +14,13 @@ async def extract_sporty_code(code: str, retries: int = 3) -> List[Dict]:
                 browser = await p.chromium.launch(headless=True)
                 # Use a real user agent to avoid bot detection
                 context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 )
                 page: Page = await context.new_page()
+
+                # Basic stealth initialization
+                await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
                 # SportyBet often uses /ng/play/<code> or /en/play/<code>
                 direct_url = f"https://www.sportybet.com/ng/play/{code}"
@@ -28,8 +32,8 @@ async def extract_sporty_code(code: str, retries: int = 3) -> List[Dict]:
                     print(f"[Extractor] Final Navigated URL: {page.url}")
 
                     # Redirect check
-                    if "homepage" in page.url or page.url == "https://www.sportybet.com/ng/":
-                        print("[Extractor] Redirected to homepage, attempting manual injection...")
+                    if "homepage" in page.url or page.url == "https://www.sportybet.com/ng/" or "login" in page.url:
+                        print("[Extractor] Redirected to homepage/login, attempting manual injection...")
                         await page.goto("https://www.sportybet.com/ng/", timeout=60000)
                         await page.wait_for_timeout(5000)
 
