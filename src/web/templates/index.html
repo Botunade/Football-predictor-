@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Sport Predictor V4</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .card { background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; }
+        .btn-primary:hover { background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }
+        .code-input { font-size: 1.5rem; letter-spacing: 2px; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 col-md-10">
+                <div class="card">
+                    <div class="card-header bg-primary text-white text-center py-4">
+                        <h2 class="mb-0">SportyBet Predictor V4</h2>
+                        <p class="mb-0">AI-Powered Sports Betting Analysis</p>
+                    </div>
+                    <div class="card-body p-4">
+                        <form action="/analyze" method="post">
+                            <div class="mb-4">
+                                <label for="code" class="form-label fw-bold">SportyBet Booking Code</label>
+                                <input type="text" class="form-control code-input text-center"
+                                       id="code" name="code" placeholder="e.g., ABC123XYZ"
+                                       required maxlength="50">
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary btn-lg">Analyze Code</button>
+                            </div>
+                        </form>
+
+                        <hr class="my-4">
+
+                        <h5 class="mb-3">Features</h5>
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><span class="text-success">+</span> Complete match extraction from SportyBet codes</li>
+                            <li class="mb-2"><span class="text-success">+</span> AI-powered predictions with XGBoost models</li>
+                            <li class="mb-2"><span class="text-success">+</span> Value bet detection (>8 percent threshold)</li>
+                            <li class="mb-2"><span class="text-success">+</span> JSON export with documentation</li>
+                            <li class="mb-2"><span class="text-success">+</span> No Telegram, no OddsAPI - clean V4</li>
+                        </ul>
+                    </div>
+                    <div class="card-footer text-center text-muted">
+                        Multi-Sport Predictor V4 - AI-Powered Betting Analysis
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</html>

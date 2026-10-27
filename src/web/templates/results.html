@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results - Multi-Sport Predictor V4</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f5f5f5; }
+        .card { border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .value-badge { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <h1 class="mb-4">Analysis Results</h1>
+
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Metadata</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Code:</strong> {{ result.metadata.code }}</p>
+                        <p><strong>Extraction Method:</strong> {{ result.metadata.method }}</p>
+                        <p><strong>Status:</strong>
+                            {% if result.extraction_details.status == 'success' %}
+                                <span class="text-success">{{ result.extraction_details.status }}</span>
+                            {% else %}
+                                <span class="text-danger">{{ result.extraction_details.status }}</span>
+                            {% endif %}
+                        </p>
+                        <p><strong>Matches Found:</strong> {{ result.matches|length }}</p>
+                        <p><strong>Predictions:</strong> {{ result.predictions|length }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Quick Stats</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        {% if result.value_bets %}
+                            <div class="display-4 text-success mb-2">{{ result.value_bets|length }}</div>
+                            <p class="text-muted">Value Bets Detected</p>
+                        {% else %}
+                            <div class="display-4 text-muted mb-2">0</div>
+                            <p class="text-muted">Value Bets Detected</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="mb-3">Matches</h3>
+        <div class="row">
+            {% for match in result.matches %}
+            <div class="col-md-6 mb-3">
+                <div class="card match-card">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ match.home_team }} vs {{ match.away_team }}</h5>
+                        <p class="card-text text-muted">
+                            {% if match.odds %}
+                                Odds: {{ match.odds.h_d_a.home if match.odds.h_d_a else match.odds_home }} /
+                                {{ match.odds.draw }} / {{ match.odds.away }}
+                            {% else %}
+                                Odds data not available
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <a href="/" class="btn btn-outline-primary">Analyze Another Code</a>
+    </div>
+</body>
+</html>
