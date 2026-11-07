@@ -236,11 +236,11 @@ class MatchPredictor:
         over25_result = self._predict_over25(X_scaled[0], features, match_str, bet_code)
 
         # Full Multi-Market Poisson Options (DC, DNB, Over/Under, BTTS, AH, CS, HT/FT, Exact Score)
-        # Resolve dynamic fixture-specific expected goals (xG)
+        # Resolve dynamic fixture-specific expected goals (xG) with Venue-Split Calibration
         home_xg = float(features.get("home_xg") or features.get("home_xG") or 0.0)
         away_xg = float(features.get("away_xg") or features.get("away_xG") or 0.0)
 
-        # If xG is missing, 0.0, or flat default (1.5, 1.2), derive it dynamically from match odds
+        # If xG is missing, 0.0, or flat default (1.5, 1.2), derive it dynamically from match odds with home advantage
         odds_h = float(features.get("odds_home", 0.0))
         odds_d = float(features.get("odds_draw", 0.0))
         odds_a = float(features.get("odds_away", 0.0))
@@ -254,15 +254,25 @@ class MatchPredictor:
             p_d = r_d / s
             p_a = r_a / s
 
-            tot_xg = max(1.8, min(3.8, 2.5 + 0.6 * (p_h - p_a)))
-            home_xg = round(tot_xg * (p_h + 0.5 * p_d), 2)
-            away_xg = round(tot_xg * (p_a + 0.5 * p_d), 2)
+            # Expected total goals dynamically scaled by match pace and team balance
+            tot_xg = max(1.75, min(3.85, 2.45 + 0.55 * (p_h - p_a)))
+            
+            # Apply venue-split weight: home teams convert higher share of possession at home (~1.12x factor)
+            home_venue_factor = 1.12
+            away_venue_factor = 0.88
+            raw_h_xg = tot_xg * (p_h + 0.5 * p_d) * home_venue_factor
+            raw_a_xg = tot_xg * (p_a + 0.5 * p_d) * away_venue_factor
+            
+            # Rebalance to expected total goals
+            scale = tot_xg / (raw_h_xg + raw_a_xg) if (raw_h_xg + raw_a_xg) > 0 else 1.0
+            home_xg = round(raw_h_xg * scale, 2)
+            away_xg = round(raw_a_xg * scale, 2)
         elif home_xg == 0.0:
             # Deterministic variance for matches without odds
             h_seed = sum(ord(c) for c in str(features.get("home_team", "H"))) % 7
             a_seed = sum(ord(c) for c in str(features.get("away_team", "A"))) % 7
-            home_xg = round(1.2 + (h_seed * 0.15), 2)
-            away_xg = round(0.9 + (a_seed * 0.15), 2)
+            home_xg = round(1.25 + (h_seed * 0.14), 2)
+            away_xg = round(0.85 + (a_seed * 0.14), 2)
 
         multi_markets = self._calculate_multimarket_options(home_xg, away_xg, features)
 
@@ -275,13 +285,16 @@ class MatchPredictor:
 
     def _calculate_multimarket_options(self, home_xg: float, away_xg: float, features: Dict) -> Dict[str, Any]:
         """
-        Compute full Poisson distribution over goal matrix to generate all betting options:
+        Compute Dixon-Coles Bivariate Poisson distribution over score matrix to generate all betting options:
+        - Dixon-Coles parameter tau(x, y) with rho = -0.11 corrects the independence flaw in low scores (0-0, 1-1, 1-0, 0-1)
         - 1X2 Match Outcome
         - Double Chance (1X, 12, X2)
         - Draw No Bet (Home DNB, Away DNB)
-        - Over/Under (1.5, 2.5, 3.5)
+        - Over/Under (0.5 to 4.5)
         - Both Teams To Score (BTTS Yes, BTTS No)
-        - Top 3 Correct Scores
+        - Asian Handicap (-0.5, +0.5, -1.5, +1.5)
+        - Clean Sheets
+        - Top 5 Correct Scores
         """
         import math
         MAX_GOALS = 6
@@ -290,10 +303,29 @@ class MatchPredictor:
             lamb = max(0.2, min(5.0, lamb))
             return (lamb ** k) * math.exp(-lamb) / math.factorial(k)
 
+        def dixon_coles_tau(x: int, y: int, lambda_param: float, mu_param: float, rho: float = -0.11) -> float:
+            """
+            Dixon-Coles adjustment parameter tau(x, y).
+            Corrects low-scoring correlation in football (empirically rho ~ -0.11 for professional leagues).
+            Inflates 0-0 and 1-1 probabilities while deflating 1-0 and 0-1.
+            """
+            if x == 0 and y == 0:
+                return 1.0 - (lambda_param * mu_param * rho)
+            elif x == 0 and y == 1:
+                return 1.0 + (mu_param * rho)
+            elif x == 1 and y == 0:
+                return 1.0 + (lambda_param * rho)
+            elif x == 1 and y == 1:
+                return 1.0 - rho
+            else:
+                return 1.0
+
         score_matrix = np.zeros((MAX_GOALS, MAX_GOALS))
         for i in range(MAX_GOALS):
             for j in range(MAX_GOALS):
-                score_matrix[i, j] = poisson_pmf(i, home_xg) * poisson_pmf(j, away_xg)
+                base_prob = poisson_pmf(i, home_xg) * poisson_pmf(j, away_xg)
+                tau = dixon_coles_tau(i, j, home_xg, away_xg, rho=-0.11)
+                score_matrix[i, j] = max(0.00001, base_prob * tau)
 
         total_p = np.sum(score_matrix)
         if total_p > 0:
@@ -312,8 +344,8 @@ class MatchPredictor:
         p_dnb_home = p_home / (p_home + p_away) if (p_home + p_away) > 0 else 0.5
         p_dnb_away = p_away / (p_home + p_away) if (p_home + p_away) > 0 else 0.5
 
-        # Totals
-        p_over_05 = float(1.0 - score_matrix[0, 0])
+        # Totals (Calculated from joint probability matrix)
+        p_over_05 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if i + j >= 1]))
         p_under_05 = max(0.01, 1.0 - p_over_05)
 
         p_over_15 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if i + j >= 2]))
@@ -328,8 +360,8 @@ class MatchPredictor:
         p_over_45 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if i + j >= 5]))
         p_under_45 = max(0.01, 1.0 - p_over_45)
 
-        # BTTS
-        p_btts_yes = float((1.0 - poisson_pmf(0, home_xg)) * (1.0 - poisson_pmf(0, away_xg)))
+        # BTTS (Exact joint probability where both i >= 1 and j >= 1)
+        p_btts_yes = float(np.sum(score_matrix[1:, 1:]))
         p_btts_no = max(0.02, 1.0 - p_btts_yes)
 
         # Asian Handicap (-0.5, +0.5, -1.5, +1.5)
@@ -346,8 +378,8 @@ class MatchPredictor:
         p_ah_home_plus_15 = max(0.02, 1.0 - p_ah_away_minus_15)
 
         # Clean Sheet
-        p_home_cs = float(np.sum([score_matrix[i, 0] for i in range(MAX_GOALS)]))
-        p_away_cs = float(np.sum([score_matrix[0, j] for j in range(MAX_GOALS)]))
+        p_home_cs = float(np.sum(score_matrix[:, 0]))
+        p_away_cs = float(np.sum(score_matrix[0, :]))
 
         # HT/FT Estimates
         p_ht_ft_11 = min(0.95, p_home * 0.65)
@@ -365,6 +397,8 @@ class MatchPredictor:
         top_scores = [{"score": s[0], "prob": round(s[1], 3), "fair_odds": round(1.0/s[1], 2) if s[1]>0 else 99.0} for s in scores_list[:5]]
 
         return {
+            "model_version": "Dixon-Coles Bivariate v4.2",
+            "venue_split_xg": {"home": home_xg, "away": away_xg},
             "match_outcome": {
                 "Home": {"prob": round(p_home, 3), "fair_odds": round(1.0/p_home, 2) if p_home>0 else 99.0},
                 "Draw": {"prob": round(p_draw, 3), "fair_odds": round(1.0/p_draw, 2) if p_draw>0 else 99.0},
