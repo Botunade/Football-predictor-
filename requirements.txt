@@ -1,10 +1,24 @@
-pandas
-requests
-beautifulsoup4
-scikit-learn
-xgboost
-python-telegram-bot
-python-dotenv
-playwright
-apscheduler
-httpx
+# Multi-Sport Predictor V4 Requirements
+# Core data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Machine Learning
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+# Optional: PyTorch for deep learning models
+# torch>=2.0.0
+
+# Web scraping
+playwright>=1.40.0
+beautifulsoup4>=4.12.0
+
+# API clients
+httpx>=0.25.0
+requests>=2.31.0
+
+# Configuration
+python-dotenv>=1.0.0
+apscheduler>=3.10.0
+
+# Note: Telegram removed in V4 - using CLI instead

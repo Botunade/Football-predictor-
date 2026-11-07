@@ -1,12 +1,37 @@
 __pycache__/
 *.py[cod]
 *$py.class
-.env
-.venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Model files (data)
 model_v3.pkl
 scaler_v3.pkl
+model_v4.pkl
+scaler_v4.pkl
+models_registry.json
+
+# Prediction results
+bet_analysis_*.json
+prediction_results.json
+
+# Scraper outputs
+*.chromium
+.playwright/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Environment files (keep example)
+.env
+!.env.example

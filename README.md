@@ -1,92 +1,191 @@
-# 🚀 Multi-Sport Prediction & Value Bet AI (Version 3)
+# Multi-Sport Predictor V4 - AI-Powered Betting Analysis
 
-A professional-grade automated betting analysis system that identifies high-value opportunities across Football, Basketball, and Hockey. Integrated with Telegram for real-time analysis via manual match input or SportyBet booking codes.
+A modern, modular sports prediction system with enhanced machine learning and AI capabilities.
 
-## 🌟 Key Features
+## Web Interface
 
-- **Multi-Sport Support:** Optimized pipelines for Football (Premier League, etc.), Basketball (NBA), and Hockey (NHL).
-- **Playwright Booking Reader:** Automatically extracts matches and odds from SportyBet Nigeria using a simple booking code.
-- **Automated Data Pipeline:**
-  - **API-Sports Integration:** Fetches real-time fixtures, injuries, and player stats.
-  - **Hybrid Scraping:** Multi-source automated scraping (Understat, FBref, SofaScore, etc.) for advanced metrics like xG, PPDA, and player efficiency.
-  - **Market Analysis:** Integrated with OddsAPI to compute implied probabilities and identify value.
-- **XGBoost Predictive Engine:** Uses a machine learning framework to calculate the probability of outcomes and identifies "Value Bets" (Model Confidence - Market Odds > 8%).
-- **Clean Telegram Interface:**
-  - Manual trigger via `/predict` command.
-  - Real-time analysis of pasted matches or booking codes.
-- **Robustness & Security:**
-  - Async Playwright for non-blocking betslip extraction.
-  - Strict Telegram authorization (responses restricted to authorized `CHAT_ID`).
-  - Modular, scalable codebase for easy feature expansion.
+A local web interface is available for interacting with the prediction pipeline:
 
-## 📋 Prerequisites
+```bash
+# Install web dependencies
+pip install -r requirements_web.txt
 
-- Python 3.8+
-- [API-Sports](https://dashboard.api-football.com/) Key
-- [The-Odds-API](https://the-odds-api.com/) Key
-- Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
+# Start the server
+web.bat         # Windows
+# or
+uvicorn src.web.app:app --host 127.0.0.1 --port 8000
+
+# Open in browser
+http://127.0.0.1:8000
+```
+
+See `docs/WEB_INTERFACE.md` for full documentation.
+
+## What Changed in V4
+
+## 📋 What Changed in V4
+
+- **Removed Telegram dependency** - Now uses CLI interface
+- **Removed OddsAPI** - Using extracted odds only
+- **Enhanced ML models** - XGBoost with calibration and ensemble methods
+- **Modular architecture** - Clean separation of concerns
+- **AI-enhanced predictions** - Neural networks and uncertainty quantification
+
+## 🏗️ Project Structure
+
+```
+football_projects/
+├── src/                          # New modular codebase
+│   ├── data_extractor/          # Web scraping (Playwright)
+│   ├── feature_engineering/     # ML feature preparation
+│   ├── models/                  # Prediction models (XGBoost, Ensemble)
+│   ├── utils/                   # Configuration, validation
+│   └── cli.py                   # Main CLI entry point
+├── .env                         # API keys (API-Sports only)
+├── requirements.txt             # Updated dependencies
+└── README.md
+```
 
 ## 🛠️ Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repo-url>
-   cd football-predictor
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Install Playwright Browsers:**
+2. **Install Playwright browsers**:
    ```bash
    playwright install chromium --with-deps
    ```
 
-4. **Configure Environment:**
-   Create a `.env` file based on `.env.example`:
+3. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env with your actual API keys and Telegram credentials
+   # Edit .env with your API-Sports key
    ```
 
 ## 🚀 Usage
 
-Run the main orchestrator:
+### Analyze a SportyBet Code
 ```bash
-python main.py
+python src/cli.py --code ABC123XYZ
 ```
 
-### Telegram Commands & Formats
+### Manual Match Prediction
+```bash
+# Football (3 or more odds)
+python src/cli.py --manual "Arsenal" "Chelsea" 2.1 3.5 4.2
 
-| Action | Format |
-| :--- | :--- |
-| **Start Bot** | `/start` |
-| **Manual Predict** | `/predict <sport> <league_id> <season>` |
-| **Booking Code Analysis** | `/sporty BC123XYZ` |
-| **Manual Match Analysis** | `Sport | TeamA vs TeamB | OddsH | OddsD | OddsA` |
+# Basketball (2 odds)
+python src/cli.py --manual "Lakers" "Celtics" 1.90 2.05
 
-*Note: For non-football sports, the Draw odds (`OddsD`) are optional.*
+# With sport specified
+python src/cli.py --manual "Lakers" "Celtics" 1.90 2.05 basketball
+```
 
-## 🏗️ System Architecture
+### Train a Model
+```bash
+# From JSON file
+python src/cli.py --train historical_data.json
 
-1. **`full_data_pipeline.py`**: Handles API interactions and multi-source web scraping.
-2. **`extractor.py`**: Pure Async Playwright automation for SportyBet betslip extraction.
-3. **`v3_prediction_model.py`**: Core ML logic, feature scaling, and value detection.
-4. **`main.py`**: Async Telegram bot handlers.
+# From CSV file
+python src/cli.py --train match_data.csv
+```
+
+## 📊 CLI Commands
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `--code` | `--code ABC123` | Analyze SportyBet booking code |
+| `--manual` | `--manual TeamA TeamB 2.1 3.5 4.2` | Manual match prediction |
+| `--train` | `--train data.json` | Train ML model |
+| `--help` | `--help` | Show help |
+
+## 🔧 Configuration (.env)
+
+```bash
+# API-Sports Key (for fixture data)
+API_KEY=your_api_sports_key
+
+# Optional: Model settings
+MODEL_N_ESTIMATORS=200
+MODEL_LR=0.05
+MODEL_MAX_DEPTH=5
+
+# Scraper settings
+SCRAPER_HEADLESS=true
+SCRAPER_TIMEOUT=60000
+
+# Value thresholds
+MIN_VALUE_THRESHOLD=0.08
+```
+
+## 🧠 ML Models
+
+### Prediction Markets
+1. **H2H** (Home/Draw/Away) - Calibrated XGBoost
+2. **BTTS** (Both Teams To Score) - Gradient Boosting
+3. **Over 2.5** - Gradient Boosting
+
+### Value Calculation
+```
+Value = Model Probability - Implied Probability (1/odds)
+```
+
+A bet is considered "Value" when Value > 0.08 (8%)
+
+## 📁 Data Pipeline
+
+```
+SportyBet Code → Playwright Scraper → Match Data
+                                          ↓
+                              Feature Builder → Feature Vector
+                                          ↓
+                                  ML Predictor → Probabilities
+                                          ↓
+                                    Value Calculator → Bets
+```
 
 ## 🧪 Testing
 
-The system includes a comprehensive test suite:
+Run the existing tests:
 ```bash
-# Run unit and integration tests
-python3 test_predictor.py
-python3 verify_main.py
-python3 test_manual_input.py
-python3 test_playwright_integration.py
+python test_predictor.py
+python test_sync_logic.py
 ```
 
-## 🔒 Security Note
+New tests in `/tests/` directory will be added.
 
-This bot is configured to only respond to the `CHAT_ID` specified in your `.env` file. Any messages from unauthorized users will be silently ignored. Always keep your `.env` file private and never commit it to version control.
+## 🔒 Security
+
+- No Telegram bot (removed attack surface)
+- API keys only used for:
+  - API-Sports (fixture/statistics data)
+  - NOT used for OddsAPI (removed in V4)
+- Credentials stored in `.env` (never committed)
+
+## 📈 Performance
+
+- Async Playwright for non-blocking scraping
+- XGBoost models for fast predictions
+- Feature caching for repeated predictions
+- Concurrent scraping with semaphores
+
+## ⚠️ Migration Notes
+
+If you're upgrading from V3:
+
+1. Your `.env` only needs `API_KEY` now (removed `ODDS_API_KEY`, `TELEGRAM_TOKEN`, `CHAT_ID`)
+2. Use CLI instead of Telegram bot
+3. Old tests may need updates for deterministic model behavior
+4. Models are now saved as `model_v4.pkl` and `scaler_v4.pkl`
+
+## 🤝 Contributing
+
+- See `src/data_extractor/` for scraping improvements
+- See `src/models/` for prediction enhancements  
+- See `src/feature_engineering/` for feature additions
+
+## 📄 License
+
+Proprietary - for internal use only

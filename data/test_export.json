@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": "cb1c693d9850",
+    "version": "1.0",
+    "schema_version": "1.0",
+    "created_at": "2026-10-24T16:06:17.992953+00:00",
+    "source": "premier_league",
+    "total_matches": 2,
+    "total_predictions": 2
+  },
+  "extraction": {
+    "start_time": "2026-10-24T16:06:17.992953+00:00",
+    "end_time": "2026-10-24T16:06:17.992953+00:00",
+    "method": "playwright"
+  },
+  "analysis": {
+    "start_time": "2026-10-24T16:06:17.992953+00:00",
+    "end_time": "2026-10-24T16:06:17.992953+00:00",
+    "model_version": "v4.0"
+  },
+  "matches": [
+    {
+      "home_team": "Arsenal",
+      "away_team": "Chelsea",
+      "league": "Premier League",
+      "sport": "football",
+      "date": "2024-01-15",
+      "odds": {
+        "h2h": {
+          "home": 2.1,
+          "draw": 3.5,
+          "away": 4.0
+        }
+      },
+      "home_xG": 1.8,
+      "away_xG": 1.2
+    },
+    {
+      "home_team": "Manchester City",
+      "away_team": "Liverpool",
+      "league": "Premier League",
+      "sport": "football",
+      "date": "2024-01-16",
+      "odds": {
+        "h2h": {
+          "home": 1.9,
+          "draw": 3.8,
+          "away": 4.5
+        }
+      },
+      "home_xG": 2.5,
+      "away_xG": 1.8
+    }
+  ],
+  "predictions": [
+    {
+      "match": "Arsenal vs Chelsea",
+      "outcome": "Home",
+      "value": 0.15,
+      "model_probability": 0.65,
+      "implied_probability": 0.48,
+      "is_value_bet": true
+    },
+    {
+      "match": "Manchester City vs Liverpool",
+      "outcome": "Home",
+      "value": 0.12,
+      "model_probability": 0.62,
+      "implied_probability": 0.53,
+      "is_value_bet": true
+    }
+  ],
+  "odds": {
+    "home_odds": 2.0,
+    "draw_odds": 3.5,
+    "away_odds": 4.0,
+    "btts_yes": 1.9,
+    "btts_no": 2.0
+  }
+}

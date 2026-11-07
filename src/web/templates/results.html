@@ -3,80 +3,572 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Results - Multi-Sport Predictor V4</title>
+    <title>Quantitative Slip Intelligence - SportyBet Predictor V4</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        body { background: #f5f5f5; }
-        .card { border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-        .value-badge { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); }
+        :root {
+            --bg-body: #090d16;
+            --bg-card: #111827;
+            --bg-card-sub: #172236;
+            --border-ui: #1f2e4d;
+            --primary-blue: #3b82f6;
+            --emerald-value: #10b981;
+            --purple-ai: #a855f7;
+            --amber-warn: #f59e0b;
+            --rose-danger: #f43f5e;
+            --text-heading: #f8fafc;
+            --text-body: #94a3b8;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-body);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+        }
+
+        .header-glass {
+            background: linear-gradient(180deg, #131c31 0%, #0d1322 100%);
+            border-bottom: 1px solid var(--border-ui);
+            backdrop-filter: blur(8px);
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-ui);
+            border-radius: 12px;
+            padding: 18px;
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .stat-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+        }
+
+        .match-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-ui);
+            border-radius: 16px;
+            margin-bottom: 28px;
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+        .match-card:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.6);
+        }
+        .match-card.is-value {
+            border-left: 6px solid var(--emerald-value);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.08);
+        }
+
+        .match-header-strip {
+            background: var(--bg-card-sub);
+            border-bottom: 1px solid var(--border-ui);
+            padding: 18px 24px;
+        }
+
+        .prob-bar-container {
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #1e293b;
+            display: flex;
+        }
+        .prob-home { background: #3b82f6; }
+        .prob-draw { background: #64748b; }
+        .prob-away { background: #f59e0b; }
+
+        .source-grid-item {
+            background: #0d1424;
+            border: 1px solid var(--border-ui);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+        }
+
+        .market-chip {
+            background: #0d1424;
+            border: 1px solid var(--border-ui);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+
+        .market-chip.active-pick {
+            border-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        .ai-verdict-box {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .score-pill {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-weight: 700;
+            color: #38bdf8;
+        }
+
+        .filter-btn {
+            background: #172236;
+            border: 1px solid var(--border-ui);
+            color: #94a3b8;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .filter-btn.active, .filter-btn:hover {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .parlay-dock {
+            position: fixed;
+            bottom: 20px;
+            right: 24px;
+            background: #1e293b;
+            border: 1px solid #10b981;
+            border-radius: 14px;
+            padding: 14px 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            z-index: 1040;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
     </style>
 </head>
 <body>
-    <div class="container py-5">
-        <h1 class="mb-4">Analysis Results</h1>
 
-        <div class="row mb-4">
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0">Metadata</h5>
+    <!-- Header Banner -->
+    <div class="header-glass py-4 mb-4">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-primary px-3 py-1">SLIP REPORT</span>
+                        <h2 class="fw-bold mb-0 text-white">{{ result.code }}</h2>
                     </div>
-                    <div class="card-body">
-                        <p><strong>Code:</strong> {{ result.metadata.code }}</p>
-                        <p><strong>Extraction Method:</strong> {{ result.metadata.method }}</p>
-                        <p><strong>Status:</strong>
-                            {% if result.extraction_details.status == 'success' %}
-                                <span class="text-success">{{ result.extraction_details.status }}</span>
-                            {% else %}
-                                <span class="text-danger">{{ result.extraction_details.status }}</span>
-                            {% endif %}
-                        </p>
-                        <p><strong>Matches Found:</strong> {{ result.matches|length }}</p>
-                        <p><strong>Predictions:</strong> {{ result.predictions|length }}</p>
+                    <p class="text-secondary small mb-0">
+                        <i class="bi bi-clock-history me-1"></i> Generated: {{ result.analysis_time[:19].replace('T', ' ') }} UTC &bull; 
+                        5 External Scrapers &bull; Multi-Market Poisson Distribution &bull; 9Router Claude-Sonnet-5
+                    </p>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-outline-info btn-sm px-3 py-2 fw-bold" onclick="copyAnalysisSummary()">
+                        <i class="bi bi-clipboard-check me-1"></i> Copy Summary
+                    </button>
+                    <a href="/" class="btn btn-primary btn-sm px-4 py-2 fw-bold">
+                        <i class="bi bi-arrow-left me-1"></i> New Analysis
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container pb-5">
+
+        <!-- Executive Stat Counter Grid -->
+        <div class="row g-3 mb-4">
+            <div class="col-lg-3 col-6">
+                <div class="stat-card">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small fw-bold text-uppercase text-secondary">Matches Analyzed</span>
+                        <i class="bi bi-shield-check text-primary fs-5"></i>
                     </div>
+                    <div class="display-6 fw-bold text-white mb-1">{{ result.matches|length }}</div>
+                    <div class="small text-muted">SportyBet / Custom Selection</div>
                 </div>
             </div>
 
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0">Quick Stats</h5>
+            <div class="col-lg-3 col-6">
+                <div class="stat-card">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small fw-bold text-uppercase text-secondary">Value Bets Detected</span>
+                        <i class="bi bi-lightning-charge-fill text-success fs-5"></i>
                     </div>
-                    <div class="card-body text-center">
-                        {% if result.value_bets %}
-                            <div class="display-4 text-success mb-2">{{ result.value_bets|length }}</div>
-                            <p class="text-muted">Value Bets Detected</p>
-                        {% else %}
-                            <div class="display-4 text-muted mb-2">0</div>
-                            <p class="text-muted">Value Bets Detected</p>
-                        {% endif %}
+                    <div class="display-6 fw-bold text-success mb-1">{{ result.value_bets|length }}</div>
+                    <div class="small text-muted">&gt;8% Vig-Removed Advantage</div>
+                </div>
+            </div>
+
+            <div class="col-lg-3 col-6">
+                <div class="stat-card">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small fw-bold text-uppercase text-secondary">Combined Slip Odds</span>
+                        <i class="bi bi-calculator-fill text-warning fs-5"></i>
                     </div>
+                    <div class="display-6 fw-bold text-warning mb-1" id="slipTotalOdds">--</div>
+                    <div class="small text-muted">Accumulated Slip Multiplier</div>
+                </div>
+            </div>
+
+            <div class="col-lg-3 col-6">
+                <div class="stat-card">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small fw-bold text-uppercase text-secondary">AI Verification</span>
+                        <i class="bi bi-cpu-fill text-purple fs-5" style="color: #c084fc;"></i>
+                    </div>
+                    <div class="display-6 fw-bold text-white mb-1">Active</div>
+                    <div class="small text-muted">claude-sonnet-5 (2-Way Cross-Check)</div>
                 </div>
             </div>
         </div>
 
-        <h3 class="mb-3">Matches</h3>
-        <div class="row">
-            {% for match in result.matches %}
-            <div class="col-md-6 mb-3">
-                <div class="card match-card">
-                    <div class="card-body">
-                        <h5 class="card-title">{{ match.home_team }} vs {{ match.away_team }}</h5>
-                        <p class="card-text text-muted">
-                            {% if match.odds %}
-                                Odds: {{ match.odds.h_d_a.home if match.odds.h_d_a else match.odds_home }} /
-                                {{ match.odds.draw }} / {{ match.odds.away }}
-                            {% else %}
-                                Odds data not available
-                            {% endif %}
-                        </p>
+        <!-- Filter & Search Toolbar -->
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 p-3 rounded" style="background: var(--bg-card); border: 1px solid var(--border-ui);">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="small text-secondary fw-bold text-uppercase me-2"><i class="bi bi-funnel"></i> Filters:</span>
+                <button class="filter-btn active" onclick="filterDisplay('all', this)">All Matches ({{ result.predictions|length }})</button>
+                <button class="filter-btn" onclick="filterDisplay('value', this)">Value Bets Only (+EV) ({{ result.value_bets|length }})</button>
+                <button class="filter-btn" onclick="filterDisplay('high-conf', this)">High AI Confidence (&ge;7/10)</button>
+            </div>
+            <div style="min-width: 250px;">
+                <input type="text" id="filterInput" class="form-control form-control-sm bg-dark border-secondary text-white" placeholder="Search team..." onkeyup="searchMatches()">
+            </div>
+        </div>
+
+        <!-- Fixture Cards List -->
+        <div id="matchesContainer">
+            {% for item in result.predictions %}
+            {% set match = item.match %}
+            {% set pred = item.prediction.h2h if item.prediction and item.prediction.h2h else {} %}
+            {% set mm = item.prediction.multi_markets if item.prediction and item.prediction.multi_markets else {} %}
+            {% set ai = item.ai_analysis if item.ai_analysis else {} %}
+            {% set cs = item.consensus_stats if item.consensus_stats else {} %}
+            {% set is_val = pred.value and pred.value > 0.08 %}
+            {% set conf = ai.confidence_score or 6 %}
+
+            <div class="match-card {% if is_val %}is-value{% endif %}" 
+                 data-is-value="{{ 'true' if is_val else 'false' }}"
+                 data-conf="{{ conf }}"
+                 data-home="{{ match.home_team }}"
+                 data-away="{{ match.away_team }}"
+                 data-odds="{{ match.selected_odds or match.odds_home or 2.0 }}">
+                
+                <!-- Match Top Bar -->
+                <div class="match-header-strip">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="badge bg-secondary px-2 py-1 text-light">{{ match.league or 'Football' }}</span>
+                                {% if is_val %}
+                                    <span class="badge bg-success px-2 py-1"><i class="bi bi-lightning-fill"></i> +{{ "%.1f"|format(pred.value * 100) }}% VALUE EDGE (+EV)</span>
+                                {% else %}
+                                    <span class="badge bg-dark border border-secondary text-secondary px-2 py-1">Fair Market Vig</span>
+                                {% endif %}
+                            </div>
+                            <h3 class="fw-bold text-white mb-0">{{ match.home_team }} <span class="text-secondary fw-normal">vs</span> {{ match.away_team }}</h3>
+                        </div>
+
+                        <!-- Selected Odds vs Fair Price -->
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="text-end">
+                                <div class="small text-secondary">Pick: <strong class="text-info">{{ match.selected_outcome or 'Pick' }}</strong></div>
+                                <div class="fs-5 fw-bold text-white">@ {{ match.selected_odds or match.odds_home or '2.00' }}</div>
+                            </div>
+                            <div class="border-start border-secondary ps-3 text-end">
+                                <div class="small text-secondary">AI Confidence</div>
+                                <div class="fs-5 fw-bold {% if conf >= 7 %}text-success{% else %}text-warning{% endif %}">{{ conf }}/10</div>
+                            </div>
+                            <div class="border-start border-secondary ps-3 text-end">
+                                <div class="small text-secondary">Rec. Stake</div>
+                                <div class="fs-6 fw-bold text-info">{{ ai.recommended_stake or '1.0% Bankroll' }}</div>
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                <div class="p-4">
+                    <!-- Segmented 1X2 Poisson Probability Bar -->
+                    {% set m_out = mm.match_outcome if mm and mm.match_outcome else {} %}
+                    {% set p_h = (m_out.Home.prob if m_out.Home else 0.40) * 100 %}
+                    {% set p_d = (m_out.Draw.prob if m_out.Draw else 0.30) * 100 %}
+                    {% set p_a = (m_out.Away.prob if m_out.Away else 0.30) * 100 %}
+
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-1 small">
+                            <span class="text-primary fw-bold">Home Win: {{ "%.0f"|format(p_h) }}% (Fair @{{ m_out.Home.fair_odds if m_out.Home else '2.50' }})</span>
+                            <span class="text-secondary fw-bold">Draw: {{ "%.0f"|format(p_d) }}% (Fair @{{ m_out.Draw.fair_odds if m_out.Draw else '3.30' }})</span>
+                            <span class="text-warning fw-bold">Away Win: {{ "%.0f"|format(p_a) }}% (Fair @{{ m_out.Away.fair_odds if m_out.Away else '3.30' }})</span>
+                        </div>
+                        <div class="prob-bar-container">
+                            <div class="prob-home" style="width: {{ p_h }}%;" title="Home: {{ '%.1f'|format(p_h) }}%"></div>
+                            <div class="prob-draw" style="width: {{ p_d }}%;" title="Draw: {{ '%.1f'|format(p_d) }}%"></div>
+                            <div class="prob-away" style="width: {{ p_a }}%;" title="Away: {{ '%.1f'|format(p_a) }}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- 5-Source Scraped Intelligence Comparison Grid -->
+                    <div class="mb-4">
+                        <div class="small text-secondary fw-bold text-uppercase mb-2"><i class="bi bi-globe me-1"></i> 5-Source Prediction Comparison:</div>
+                        <div class="row g-2">
+                            <div class="col-md">
+                                <div class="source-grid-item">
+                                    <div class="fw-bold text-info mb-1"><i class="bi bi-circle-fill" style="font-size: 8px;"></i> Forebet</div>
+                                    {% if cs.forebet_score %}
+                                        <div>Score: <strong>{{ cs.forebet_score }}</strong></div>
+                                        <div class="small text-muted">{{ cs.forebet_prob.home * 100|int }}% - {{ cs.forebet_prob.draw * 100|int }}% - {{ cs.forebet_prob.away * 100|int }}%</div>
+                                    {% else %}
+                                        <div class="text-muted small">Statistical Derived</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="col-md">
+                                <div class="source-grid-item">
+                                    <div class="fw-bold text-pink mb-1" style="color: #f472b6;"><i class="bi bi-circle-fill" style="font-size: 8px;"></i> ScoreGPT AI</div>
+                                    {% if cs.scoregpt_pick %}
+                                        <div class="text-truncate">Pick: <strong>{{ cs.scoregpt_pick }}</strong></div>
+                                        <div class="small text-muted">{{ cs.scoregpt_panel or 'Consensus' }}</div>
+                                    {% else %}
+                                        <div class="text-muted small">No Direct Call</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="col-md">
+                                <div class="source-grid-item">
+                                    <div class="fw-bold text-success mb-1"><i class="bi bi-circle-fill" style="font-size: 8px;"></i> Betensured</div>
+                                    {% if cs.betensured_tip %}
+                                        <div>Tip: <strong>{{ cs.betensured_tip }}</strong></div>
+                                        <div class="small text-muted">{{ cs.betensured_score or 'Expert Pick' }}</div>
+                                    {% else %}
+                                        <div class="text-muted small">No Direct Call</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="col-md">
+                                <div class="source-grid-item">
+                                    <div class="fw-bold text-warning mb-1"><i class="bi bi-circle-fill" style="font-size: 8px;"></i> PredictZ</div>
+                                    {% if cs.predictz_outcome or cs.predictz_score %}
+                                        <div>Tip: <strong>{{ cs.predictz_outcome or 'Tip' }}</strong></div>
+                                        <div class="small text-muted">{{ cs.predictz_score or 'Form Guide' }}</div>
+                                    {% else %}
+                                        <div class="text-muted small">No Direct Call</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="col-md">
+                                <div class="source-grid-item">
+                                    <div class="fw-bold text-purple mb-1" style="color: #c084fc;"><i class="bi bi-circle-fill" style="font-size: 8px;"></i> MatchOutlook</div>
+                                    {% if cs.matchoutlook_best_bet %}
+                                        <div class="text-truncate">Bet: <strong>{{ cs.matchoutlook_best_bet }}</strong></div>
+                                        <div class="small text-muted">Specialized Pick</div>
+                                    {% else %}
+                                        <div class="text-muted small">General Market</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comprehensive Multi-Market Matrix -->
+                    {% if mm %}
+                    <div class="mb-4 p-3 rounded" style="background: #0d1424; border: 1px solid var(--border-ui);">
+                        <div class="small fw-bold text-uppercase text-secondary mb-3"><i class="bi bi-grid-3x3-gap-fill me-1"></i> Poisson Probabilities &amp; Fair Odds:</div>
+                        <div class="row g-2">
+                            <!-- Double Chance -->
+                            <div class="col-lg-3 col-6">
+                                <div class="market-chip h-100">
+                                    <div class="text-info fw-bold mb-1">Double Chance</div>
+                                    <div class="small">1X: <strong>{{ "%.0f"|format(mm.double_chance['1X (Home/Draw)'].prob * 100) }}%</strong> (@{{ mm.double_chance['1X (Home/Draw)'].fair_odds }})</div>
+                                    <div class="small">X2: <strong>{{ "%.0f"|format(mm.double_chance['X2 (Draw/Away)'].prob * 100) }}%</strong> (@{{ mm.double_chance['X2 (Draw/Away)'].fair_odds }})</div>
+                                </div>
+                            </div>
+
+                            <!-- Totals -->
+                            <div class="col-lg-3 col-6">
+                                <div class="market-chip h-100">
+                                    <div class="text-info fw-bold mb-1">Goal Totals</div>
+                                    <div class="small">Over 1.5: <strong>{{ "%.0f"|format(mm.totals['Over 1.5'].prob * 100) }}%</strong> (@{{ mm.totals['Over 1.5'].fair_odds }})</div>
+                                    <div class="small">Over 2.5: <strong>{{ "%.0f"|format(mm.totals['Over 2.5'].prob * 100) }}%</strong> (@{{ mm.totals['Over 2.5'].fair_odds }})</div>
+                                </div>
+                            </div>
+
+                            <!-- BTTS & Asian Handicap -->
+                            <div class="col-lg-3 col-6">
+                                <div class="market-chip h-100">
+                                    <div class="text-info fw-bold mb-1">BTTS &amp; Handicap</div>
+                                    <div class="small">BTTS Yes: <strong>{{ "%.0f"|format(mm.btts['BTTS Yes'].prob * 100) }}%</strong> (@{{ mm.btts['BTTS Yes'].fair_odds }})</div>
+                                    {% if mm.asian_handicap %}
+                                        <div class="small">AH Home +0.5: <strong>{{ "%.0f"|format(mm.asian_handicap['Home +0.5'].prob * 100) }}%</strong></div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- Top Correct Scores -->
+                            <div class="col-lg-3 col-6">
+                                <div class="market-chip h-100">
+                                    <div class="text-info fw-bold mb-1">Top Likely Scores</div>
+                                    <div class="d-flex flex-wrap gap-1 mt-1">
+                                        {% for s in mm.top_correct_scores[:3] %}
+                                            <span class="score-pill small">{{ s.score }} ({{ "%.0f"|format(s.prob * 100) }}%)</span>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- 2-Way AI Verification & Tactical Breakdown -->
+                    <div class="ai-verdict-box">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-cpu-fill text-warning fs-5"></i>
+                                <h6 class="fw-bold text-white mb-0">2-Way AI Analyst Verdict:</h6>
+                                <span class="badge {% if 'Value' in ai.ai_verdict or is_val %}bg-success{% elif 'Avoid' in ai.ai_verdict %}bg-danger{% else %}bg-primary{% endif %} px-3 py-1 fs-6">
+                                    {{ ai.ai_verdict }}
+                                </span>
+                            </div>
+                            <span class="badge bg-dark border border-secondary text-secondary small">Model: claude-sonnet-5</span>
+                        </div>
+
+                        <p class="text-light small mb-3 leading-relaxed">{{ ai.tactical_overview }}</p>
+
+                        <div class="row g-3 small mb-3">
+                            <div class="col-md-6">
+                                <div class="p-2 rounded bg-dark border border-secondary">
+                                    <strong class="text-white d-block mb-1"><i class="bi bi-intersect text-info me-1"></i> Multi-Site Consensus Agreement:</strong>
+                                    <span class="text-secondary">{{ ai.consensus_agreement or 'Aligned across statistical predictors' }}</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="p-2 rounded bg-dark border border-secondary">
+                                    <strong class="text-white d-block mb-1"><i class="bi bi-graph-up-arrow text-success me-1"></i> Vig &amp; Edge Evaluation:</strong>
+                                    <span class="text-secondary">{{ ai.edge_evaluation }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if ai.best_alternative_options %}
+                        <div class="border-top border-secondary pt-3 mt-3">
+                            <div class="small fw-bold text-warning mb-2"><i class="bi bi-lightbulb-fill me-1"></i> Recommended Alternative High-Value Options:</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for alt in ai.best_alternative_options %}
+                                <div class="p-2 rounded bg-dark border border-secondary small">
+                                    <strong class="text-info">{{ alt.option }}</strong> 
+                                    <span class="badge bg-secondary ms-1">{{ alt.market_type }}</span>: 
+                                    <span class="text-light">{{ alt.rationale }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if ai.risk_factors %}
+                        <div class="mt-2 pt-2 text-muted small">
+                            <strong class="text-secondary"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Key Tactical Risks:</strong>
+                            {{ ai.risk_factors|join(' &bull; ') }}
+                        </div>
+                        {% endif %}
+                    </div>
+
                 </div>
             </div>
             {% endfor %}
         </div>
 
-        <a href="/" class="btn btn-outline-primary">Analyze Another Code</a>
+        <div class="text-center mt-5">
+            <a href="/" class="btn btn-outline-light px-5 py-2"><i class="bi bi-arrow-left me-2"></i>Return to Analysis Catalog</a>
+        </div>
     </div>
+
+    <!-- Floating Parlay Odds Summary Dock -->
+    <div class="parlay-dock">
+        <div>
+            <div class="small text-secondary fw-bold text-uppercase">Accumulator Odds</div>
+            <div class="fs-5 fw-bold text-success" id="dockOdds">--</div>
+        </div>
+        <button class="btn btn-success btn-sm fw-bold px-3 py-2 rounded-pill" onclick="copyAnalysisSummary()">
+            <i class="bi bi-share-fill me-1"></i> Share Slip
+        </button>
+    </div>
+
+    <script>
+        // Calculate Total Accumulator Odds
+        function calculateTotalOdds() {
+            let total = 1.0;
+            const cards = document.querySelectorAll('.match-card');
+            cards.forEach(c => {
+                const odd = parseFloat(c.getAttribute('data-odds')) || 1.0;
+                if (odd > 1.0) total *= odd;
+            });
+            const formatted = total.toFixed(2);
+            document.getElementById('slipTotalOdds').innerText = `${formatted}x`;
+            document.getElementById('dockOdds').innerText = `${formatted}x Multiplier`;
+        }
+        calculateTotalOdds();
+
+        // Filter cards by category
+        function filterDisplay(mode, el) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+
+            const cards = document.querySelectorAll('.match-card');
+            cards.forEach(c => {
+                const isVal = c.getAttribute('data-is-value') === 'true';
+                const conf = parseInt(c.getAttribute('data-conf')) || 5;
+
+                if (mode === 'all') {
+                    c.style.display = 'block';
+                } else if (mode === 'value') {
+                    c.style.display = isVal ? 'block' : 'none';
+                } else if (mode === 'high-conf') {
+                    c.style.display = (conf >= 7) ? 'block' : 'none';
+                }
+            });
+        }
+
+        // Live Search
+        function searchMatches() {
+            const query = document.getElementById('filterInput').value.toLowerCase();
+            const cards = document.querySelectorAll('.match-card');
+            cards.forEach(c => {
+                const home = c.getAttribute('data-home').toLowerCase();
+                const away = c.getAttribute('data-away').toLowerCase();
+                if (home.includes(query) || away.includes(query)) {
+                    c.style.display = 'block';
+                } else {
+                    c.style.display = 'none';
+                }
+            });
+        }
+
+        // Copy Summary to Clipboard
+        function copyAnalysisSummary() {
+            const code = "{{ result.code }}";
+            let text = `SportyBet Predictor V4 - Slip Report [${code}]\n`;
+            text += `Total Matches: {{ result.matches|length }} | Value Bets Detected: {{ result.value_bets|length }}\n\n`;
+
+            document.querySelectorAll('.match-card').forEach((c, i) => {
+                const home = c.getAttribute('data-home');
+                const away = c.getAttribute('data-away');
+                const odd = c.getAttribute('data-odds');
+                const isVal = c.getAttribute('data-is-value') === 'true';
+                text += `[${i+1}] ${home} vs ${away} @ ${odd} ${isVal ? '[VALUE BET]' : ''}\n`;
+            });
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Analysis summary copied to clipboard!');
+            }).catch(err => {
+                alert('Could not copy: ' + err);
+            });
+        }
+    </script>
 </body>
 </html>

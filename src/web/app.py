@@ -19,8 +19,11 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data_extractor.code_reader import extract_betting_code
+from data_extractor.code_reader import extract_betting_code, extract_betting_code_async
+from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
+from feature_engineering import build_features
 from models.predictor import predict_match
+from models.ai_agent import get_ai_agent
 
 app = FastAPI(title="Multi-Sport Predictor V4", description="AI-Powered Sports Betting Analysis")
 
@@ -38,61 +41,219 @@ templates = Jinja2Templates(directory=str(templates_dir))
 results_storage: Dict[str, Any] = {}
 
 
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.on_event("startup")
 async def startup_event():
     create_templates()
+    # Pre-warm statistics aggregator in background
+    asyncio.create_task(get_stats_aggregator().refresh_if_needed())
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Home page with input form"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    """Home page with input form and live scraped fixtures catalog"""
+    aggregator = get_stats_aggregator()
+    scraped_fixtures = aggregator.get_all_scraped_fixtures()
+    leagues = sorted(list(set(f.get("league", "Other") for f in scraped_fixtures if f.get("league"))))
+
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "request": request,
+            "scraped_fixtures": scraped_fixtures,
+            "leagues": leagues,
+            "total_scraped": len(scraped_fixtures)
+        }
+    )
+
+
+@app.get("/api/scraped-fixtures", response_class=JSONResponse)
+async def get_scraped_fixtures():
+    """API endpoint to get all current scraped fixtures from the 5 platforms"""
+    aggregator = get_stats_aggregator()
+    fixtures = aggregator.get_all_scraped_fixtures()
+    return {"status": "success", "count": len(fixtures), "fixtures": fixtures}
+
+
+@app.post("/api/preview-code")
+async def preview_code(request: Request):
+    """Preview matches in a SportyBet booking code without running full analysis"""
+    try:
+        code = ""
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            try:
+                body = await request.json()
+                code = str(body.get("code", "")).strip()
+            except Exception:
+                code = ""
+        else:
+            try:
+                form = await request.form()
+                code = str(form.get("code", "")).strip()
+            except Exception:
+                code = ""
+
+        if not code:
+            return JSONResponse({"status": "error", "message": "Code is required"}, status_code=400)
+
+        result = await extract_betting_code_async(code=code, headless=True, max_retries=1)
+        matches = result.get("matches", [])
+        return JSONResponse({
+            "status": "success",
+            "code": code,
+            "match_count": len(matches),
+            "matches": matches
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@app.post("/analyze-selected", response_class=HTMLResponse)
+async def analyze_selected_matches(request: Request, selected_fixtures_json: str = Form(...), source_title: str = Form("Custom Scraped Selection")):
+    """Analyze a custom list of selected scraped games"""
+    try:
+        raw_matches = json.loads(selected_fixtures_json)
+        if not raw_matches:
+            raise ValueError("No matches were selected for analysis")
+
+        matches = []
+        for m in raw_matches:
+            matches.append({
+                "home_team": m.get("home_team"),
+                "away_team": m.get("away_team"),
+                "league": m.get("league", "General"),
+                "odds_home": float(m.get("odds_home", 2.10)),
+                "odds_draw": float(m.get("odds_draw", 3.20)),
+                "odds_away": float(m.get("odds_away", 3.10)),
+                "selected_outcome": m.get("selected_outcome", "Home"),
+                "selected_odds": float(m.get("selected_odds", m.get("odds_home", 2.10))),
+                "sport": "football",
+                "status": "upcoming"
+            })
+
+        aggregator = get_stats_aggregator()
+        ai_agent = get_ai_agent()
+        sem = asyncio.Semaphore(2)
+
+        async def process_single_match(match):
+            try:
+                feat = await build_features(match, "football")
+                prediction = predict_match(feat.to_dict(), "football")
+                stats_obj = await aggregator.get_match_stats(match.get("home_team", ""), match.get("away_team", ""))
+                c_stats = stats_obj.to_dict()
+                async with sem:
+                    ai_analysis = await asyncio.to_thread(ai_agent.analyze_fixture, match, c_stats, prediction)
+
+                return {
+                    "match": match,
+                    "prediction": prediction,
+                    "consensus_stats": c_stats,
+                    "ai_analysis": ai_analysis
+                }
+            except Exception as e:
+                return {
+                    "match": match,
+                    "error": str(e)
+                }
+
+        predictions = await asyncio.gather(*[process_single_match(m) for m in matches])
+
+        value_bets = []
+        for pred in predictions:
+            if "prediction" in pred:
+                h2h = pred["prediction"].get("h2h", {})
+                value = h2h.get("value", -1)
+                if value > 0.08:
+                    value_bets.append({
+                        "match": h2h.get("match"),
+                        "outcome": h2h.get("outcome"),
+                        "value": value,
+                        "confidence": h2h.get("model_probability")
+                    })
+
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        result_data = {
+            "code": source_title,
+            "metadata": {"code": source_title, "method": "Selected Scraped Fixtures"},
+            "extraction_details": {"status": "success", "selection_type": "user_selected"},
+            "matches": matches,
+            "predictions": predictions,
+            "value_bets": value_bets,
+            "analysis_time": datetime.now().isoformat()
+        }
+        results_storage[session_id] = result_data
+
+        return templates.TemplateResponse(
+            request=request,
+            name="results.html",
+            context={
+                "request": request,
+                "result": result_data,
+                "session_id": session_id
+            }
+        )
+
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="error.html",
+            context={
+                "request": request,
+                "error": str(e),
+                "error_type": type(e).__name__
+            },
+            status_code=500
+        )
 
 
 @app.post("/analyze", response_class=HTMLResponse)
-async def analyze_code(code: str = Form(...)):
+async def analyze_code(request: Request, code: str = Form(...)):
     """Analyze a SportyBet booking code"""
     try:
-        # Extract matches from code
-        result = extract_betting_code(code=code, headless=True, max_retries=1)
+        # Extract matches from code asynchronously
+        result = await extract_betting_code_async(code=code, headless=True, max_retries=1)
 
         matches = result.get("matches", [])
         metadata = result.get("metadata", {})
         extraction_details = result.get("extraction_details", {})
 
-        # Run predictions on each match
-        predictions = []
-        for match in matches:
-            try:
-                # Build features from match data
-                features = {
-                    "home_team": match.get("home_team", "Unknown"),
-                    "away_team": match.get("away_team", "Unknown"),
-                    "home_xG": match.get("home_xG", 1.5),
-                    "away_xG": match.get("away_xG", 1.5),
-                    "home_xGA": match.get("home_xGA", 1.2),
-                    "away_xGA": match.get("away_xGA", 1.2),
-                    "home_ppda": match.get("home_ppda", 10.5),
-                    "away_ppda": match.get("away_ppda", 10.5),
-                    "home_injury": match.get("home_injury", 0.1),
-                    "away_injury": match.get("away_injury", 0.1),
-                    "home_fatigue": match.get("home_fatigue", 0.2),
-                    "away_fatigue": match.get("away_fatigue", 0.2),
-                    "odds_home": match.get("odds_home", 2.0),
-                    "odds_draw": match.get("odds_draw", 3.0),
-                    "odds_away": match.get("odds_away", 4.0),
-                }
+        # Run predictions and AI analysis on each match concurrently with controlled concurrency (Semaphore=2)
+        aggregator = get_stats_aggregator()
+        ai_agent = get_ai_agent()
+        sem = asyncio.Semaphore(2)
 
-                prediction = predict_match(features, "football")
-                predictions.append({
+        async def process_single_match(match):
+            try:
+                feat = await build_features(match, "football")
+                prediction = predict_match(feat.to_dict(), "football")
+                stats_obj = await aggregator.get_match_stats(match.get("home_team", ""), match.get("away_team", ""))
+                c_stats = stats_obj.to_dict()
+                async with sem:
+                    ai_analysis = await asyncio.to_thread(ai_agent.analyze_fixture, match, c_stats, prediction)
+
+                return {
                     "match": match,
-                    "prediction": prediction
-                })
+                    "prediction": prediction,
+                    "consensus_stats": c_stats,
+                    "ai_analysis": ai_analysis
+                }
             except Exception as e:
-                predictions.append({
+                return {
                     "match": match,
                     "error": str(e)
-                })
+                }
+
+        predictions = await asyncio.gather(*[process_single_match(m) for m in matches])
 
         # Find value bets
         value_bets = []
@@ -121,18 +282,27 @@ async def analyze_code(code: str = Form(...)):
         }
         results_storage[session_id] = result_data
 
-        return templates.TemplateResponse("results.html", {
-            "request": Request,
-            "result": result_data,
-            "session_id": session_id
-        })
+        return templates.TemplateResponse(
+            request=request,
+            name="results.html",
+            context={
+                "request": request,
+                "result": result_data,
+                "session_id": session_id
+            }
+        )
 
     except Exception as e:
-        return templates.TemplateResponse("error.html", {
-            "request": Request,
-            "error": str(e),
-            "error_type": type(e).__name__
-        }, status_code=500)
+        return templates.TemplateResponse(
+            request=request,
+            name="error.html",
+            context={
+                "request": request,
+                "error": str(e),
+                "error_type": type(e).__name__
+            },
+            status_code=500
+        )
 
 
 @app.get("/api/result/{session_id}", response_class=JSONResponse)
@@ -146,10 +316,14 @@ async def get_result(session_id: str):
 @app.get("/results", response_class=HTMLResponse)
 async def results_list(request: Request):
     """List all stored results"""
-    return templates.TemplateResponse("results_list.html", {
-        "request": request,
-        "results": list(results_storage.items())
-    })
+    return templates.TemplateResponse(
+        request=request,
+        name="results_list.html",
+        context={
+            "request": request,
+            "results": list(results_storage.items())
+        }
+    )
 
 
 # Create HTML templates
@@ -362,11 +536,15 @@ def create_templates():
 </body>
 </html>"""
 
-    # Write templates
-    (templates_dir / "index.html").write_text(index_html, encoding='utf-8')
-    (templates_dir / "results.html").write_text(results_html, encoding='utf-8')
-    (templates_dir / "error.html").write_text(error_html, encoding='utf-8')
-    (templates_dir / "results_list.html").write_text(results_list_html, encoding='utf-8')
+    # Write templates if they don't already exist
+    if not (templates_dir / "index.html").exists():
+        (templates_dir / "index.html").write_text(index_html, encoding='utf-8')
+    if not (templates_dir / "results.html").exists():
+        (templates_dir / "results.html").write_text(results_html, encoding='utf-8')
+    if not (templates_dir / "error.html").exists():
+        (templates_dir / "error.html").write_text(error_html, encoding='utf-8')
+    if not (templates_dir / "results_list.html").exists():
+        (templates_dir / "results_list.html").write_text(results_list_html, encoding='utf-8')
 
 
 if __name__ == "__main__":
