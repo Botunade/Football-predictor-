@@ -118,6 +118,56 @@ async def preview_code(request: Request):
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
+@app.post("/api/automation/place-bet")
+async def api_place_bet(request: Request):
+    """
+    Automated SportyBet Wager API
+    Allows triggering a test wager of 10 NGN (dry-run or live) on a booking code.
+    """
+    try:
+        data = {}
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            try:
+                data = await request.json()
+            except Exception:
+                data = {}
+        else:
+            try:
+                form = await request.form()
+                data = dict(form)
+            except Exception:
+                data = {}
+
+        code = str(data.get("code", "")).strip().upper()
+        if not code:
+            return JSONResponse({"success": False, "message": "Booking code is required"}, status_code=400)
+
+        stake = float(data.get("stake", 10.0))
+        dry_run = str(data.get("dry_run", "true")).lower() in ["true", "1", "yes"]
+        confirm = str(data.get("confirm", "false")).lower() in ["true", "1", "yes"]
+
+        try:
+            from .automation.automation_manager import get_automation_manager
+        except (ImportError, ValueError):
+            try:
+                from automation.automation_manager import get_automation_manager
+            except ImportError:
+                from src.automation.automation_manager import get_automation_manager
+
+        mgr = get_automation_manager()
+        res = await mgr.execute_booking_code_wager(
+            code=code,
+            stake=stake,
+            dry_run=dry_run,
+            confirm=confirm,
+            headless=True
+        )
+        return JSONResponse(res)
+    except Exception as e:
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+
 @app.post("/analyze-selected", response_class=HTMLResponse)
 async def analyze_selected_matches(request: Request, selected_fixtures_json: str = Form(...), source_title: str = Form("Custom Scraped Selection")):
     """Analyze a custom list of selected scraped games"""

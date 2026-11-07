@@ -239,6 +239,35 @@
             </div>
         </div>
 
+        <!-- SportyBet Automation Hub Card -->
+        <div class="card p-3 mb-4 rounded" style="background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%); border: 1px solid #6366f1;">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-primary px-2 py-1">AUTOMATION ENGINE</span>
+                        <h5 class="fw-bold mb-0 text-white"><i class="bi bi-robot text-info me-1"></i> SportyBet Auto-Bet Hub</h5>
+                    </div>
+                    <div class="small text-secondary">
+                        Patron Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success">NGN 100.93</strong> &bull; Wager Stake: <strong class="text-warning">10.00 NGN</strong>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <button class="btn btn-outline-info btn-sm fw-bold px-3 py-2" id="btnDryRun" onclick="triggerSportyAutomation(true)">
+                        <i class="bi bi-shield-check me-1"></i> Dry-Run Validate (10 NGN)
+                    </button>
+                    <button class="btn btn-success btn-sm fw-bold px-3 py-2" id="btnLiveBet" onclick="triggerSportyAutomation(false)">
+                        <i class="bi bi-play-circle-fill me-1"></i> Execute Real Bet (10 NGN)
+                    </button>
+                </div>
+            </div>
+            <div id="automationStatusArea" class="mt-3 d-none">
+                <div class="alert alert-secondary mb-0 py-2 small d-flex align-items-center gap-2" id="automationStatusBox">
+                    <div class="spinner-border spinner-border-sm text-info" id="automationSpinner" role="status"></div>
+                    <span id="automationStatusText">Initializing SportyBet automated session...</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Fixture Cards List -->
         <div id="matchesContainer">
             {% for item in result.predictions %}
@@ -626,6 +655,69 @@
             }).catch(err => {
                 alert('Could not copy: ' + err);
             });
+        }
+
+        // SportyBet Automation Execution
+        async function triggerSportyAutomation(isDryRun) {
+            const statusArea = document.getElementById('automationStatusArea');
+            const statusBox = document.getElementById('automationStatusBox');
+            const statusText = document.getElementById('automationStatusText');
+            const spinner = document.getElementById('automationSpinner');
+            const btnDry = document.getElementById('btnDryRun');
+            const btnLive = document.getElementById('btnLiveBet');
+
+            if (!isDryRun) {
+                if (!confirm("CONFIRMATION: You are about to place a real 10 NGN wager on SportyBet using your verified account (815****422). Proceed?")) {
+                    return;
+                }
+            }
+
+            statusArea.classList.remove('d-none');
+            spinner.classList.remove('d-none');
+            statusBox.className = "alert alert-info mb-0 py-2 small d-flex align-items-center gap-2";
+            statusText.innerText = isDryRun 
+                ? "Launching headless Chromium & validating betslip with 10 NGN stake (Dry-Run)..."
+                : "Logging into SportyBet, loading slip, and placing 10 NGN wager...";
+
+            btnDry.disabled = true;
+            btnLive.disabled = true;
+
+            try {
+                const payload = {
+                    code: "{{ result.code }}",
+                    stake: 10.0,
+                    dry_run: isDryRun ? "true" : "false",
+                    confirm: isDryRun ? "false" : "true"
+                };
+
+                const resp = await fetch('/api/automation/place-bet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const res = await resp.json();
+                spinner.classList.add('d-none');
+
+                if (res.success) {
+                    statusBox.className = "alert alert-success mb-0 py-2 small";
+                    if (isDryRun) {
+                        statusText.innerHTML = `<strong>VALIDATION SUCCESS:</strong> ${res.message} (Stake: ${res.stake} NGN, Potential Win: ${res.potential_win || '--'} NGN)`;
+                    } else {
+                        statusText.innerHTML = `<strong>WAGER PLACED:</strong> Ticket ID: <strong>${res.ticket_id || 'Confirmed'}</strong> &bull; Balance: ${res.balance_after || '100.93 NGN'} &bull; ${res.message}`;
+                    }
+                } else {
+                    statusBox.className = "alert alert-danger mb-0 py-2 small";
+                    statusText.innerHTML = `<strong>EXECUTION NOTICE:</strong> ${res.message}`;
+                }
+            } catch (e) {
+                spinner.classList.add('d-none');
+                statusBox.className = "alert alert-danger mb-0 py-2 small";
+                statusText.innerHTML = `<strong>Network Error:</strong> ${e.message}`;
+            } finally {
+                btnDry.disabled = false;
+                btnLive.disabled = false;
+            }
         }
     </script>
 </body>
