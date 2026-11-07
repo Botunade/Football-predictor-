@@ -376,6 +376,64 @@
                         </div>
                     </div>
 
+                    <!-- Phase 2 Enrichment: Direct H2H, League Motivation, Sharp Money Signals -->
+                    {% set enrich = item.enrichment if item.enrichment else {} %}
+                    {% set h2h = enrich.h2h or item.prediction.h2h_data or {} %}
+                    {% set lmot = enrich.league_context or item.prediction.league_context or {} %}
+                    {% set sharp = enrich.sharp_money or item.prediction.sharp_money or {} %}
+
+                    <div class="mb-4 p-3 rounded" style="background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border-ui);">
+                        <div class="row g-3 align-items-center">
+                            <!-- H2H Dominance -->
+                            <div class="col-lg-4 col-md-6 border-end border-secondary border-opacity-25 pe-3">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span class="small fw-bold text-uppercase text-secondary"><i class="bi bi-clock-history text-info"></i> Head-to-Head (H2H)</span>
+                                    {% if h2h.is_bogey_team %}
+                                        <span class="badge bg-danger text-white px-2 py-0" style="font-size: 0.65rem;">BOGEY TEAM</span>
+                                    {% endif %}
+                                </div>
+                                <div class="fw-bold text-white small mb-1">{{ h2h.dominance_label or 'Balanced Matchup' }}</div>
+                                <div class="d-flex justify-content-between align-items-center small text-muted">
+                                    <span>Past {{ h2h.total_meetings or 5 }} Meetings: <strong class="text-white">{{ h2h.home_wins or 2 }}W - {{ h2h.draws or 1 }}D - {{ h2h.away_wins or 2 }}L</strong></span>
+                                    <span>BTTS: <strong class="text-info">{{ h2h.btts_rate or 50 }}%</strong></span>
+                                </div>
+                            </div>
+
+                            <!-- League Table & Motivation -->
+                            <div class="col-lg-4 col-md-6 border-end border-secondary border-opacity-25 px-3">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span class="small fw-bold text-uppercase text-secondary"><i class="bi bi-bar-chart-steps text-warning"></i> Table & Motivation</span>
+                                    {% if lmot.is_high_stakes %}
+                                        <span class="badge bg-warning text-dark px-2 py-0" style="font-size: 0.65rem;">HIGH STAKES</span>
+                                    {% endif %}
+                                </div>
+                                <div class="fw-bold text-white small mb-1 text-truncate" title="{{ lmot.narrative }}">{{ lmot.narrative or 'Standard League Match' }}</div>
+                                <div class="d-flex justify-content-between align-items-center small text-muted">
+                                    <span>{{ match.home_team }} (Pos #{{ lmot.home_rank or 8 }})</span>
+                                    <span class="text-secondary">&harr;</span>
+                                    <span>{{ match.away_team }} (Pos #{{ lmot.away_rank or 12 }})</span>
+                                </div>
+                            </div>
+
+                            <!-- Sharp Money & Odds Drift -->
+                            <div class="col-lg-4 col-md-12 ps-3">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span class="small fw-bold text-uppercase text-secondary"><i class="bi bi-graph-up-arrow text-success"></i> Sharp Money Drift</span>
+                                    {% if sharp.is_sharp_confirmed %}
+                                        <span class="badge bg-success text-white px-2 py-0" style="font-size: 0.65rem;">SHARP BUY</span>
+                                    {% else %}
+                                        <span class="badge bg-dark border border-secondary text-secondary px-2 py-0" style="font-size: 0.65rem;">MARKET VIG</span>
+                                    {% endif %}
+                                </div>
+                                <div class="fw-bold text-white small mb-1">{{ sharp.market_sentiment or 'Neutral Market' }}</div>
+                                <div class="d-flex justify-content-between align-items-center small text-muted">
+                                    <span>Signal: <strong class="text-success">{{ sharp.action_signal or 'Hold' }}</strong></span>
+                                    <span>Edge: <strong class="{% if sharp.edge_pct and sharp.edge_pct > 0 %}text-success{% else %}text-muted{% endif %}">{{ "%.1f"|format(sharp.edge_pct or 0.0) }}%</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Comprehensive Multi-Market Matrix -->
                     {% if mm %}
                     <div class="mb-4 p-3 rounded" style="background: #0d1424; border: 1px solid var(--border-ui);">

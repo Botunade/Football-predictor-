@@ -171,17 +171,23 @@ If no match exists, return 'NONE'.
         kelly = float(ml_h2h.get("kelly_stake_percent", 1.0))
         multi_markets = (ml_prediction or {}).get("multi_markets", {})
 
+        # Phase 2 Enrichment Inputs
+        h2h_data = c_stats.get("h2h_data") or (ml_prediction or {}).get("h2h_data") or {}
+        league_ctx = c_stats.get("league_context") or (ml_prediction or {}).get("league_context") or {}
+        sharp_sig = c_stats.get("sharp_money") or (ml_prediction or {}).get("sharp_money") or {}
+
         if not self._is_active:
             return self._generate_heuristic_analysis(
                 home=home, away=away, odds=(odds_h, odds_d, odds_a),
                 pick=pick, pick_odds=pick_odds,
                 forebet=forebet, predictz=predictz,
                 ml_value=ml_value, ml_prob=ml_prob, kelly=kelly,
-                multi_markets=multi_markets, mo_bet=mo_bet
+                multi_markets=multi_markets, mo_bet=mo_bet,
+                h2h_data=h2h_data, league_ctx=league_ctx, sharp_sig=sharp_sig
             )
 
         prompt = f"""You are an elite quantitative sports bettor and tactical football analyst.
-Analyze the following match using this multi-site scraped intelligence and Poisson market models:
+Analyze the following match using this multi-site scraped intelligence, Dixon-Coles Poisson models, and contextual data enrichment:
 
 ### FIXTURE DETAILS:
 - Match: {home} (Home) vs {away} (Away)
@@ -204,7 +210,14 @@ Analyze the following match using this multi-site scraped intelligence and Poiss
 5. MatchOutlook (Alternative Market Tips):
    - Recommended Market: {mo_bet if mo_bet else 'General Pick'} ({mo_desc})
 
-### QUANTITATIVE MULTI-MARKET OPTIONS (POISSON PROBABILITY & FAIR ODDS):
+### HIGH-IMPACT ENRICHMENT CONTEXT:
+- Head-to-Head (H2H) Dominance: {h2h_data.get('dominance_label', 'Balanced Rivalry')}
+  * Record (Last {h2h_data.get('total_meetings', 5)} meetings): {home} {h2h_data.get('home_wins', 0)}W - {h2h_data.get('draws', 0)}D - {away} {h2h_data.get('away_wins', 0)}W | Avg Total Goals: {h2h_data.get('avg_total_goals', 2.6)} | BTTS Rate: {h2h_data.get('btts_rate', 50)}% {'[BOGEY TEAM ALERT]' if h2h_data.get('is_bogey_team') else ''}
+- League Table Context & Motivation: {league_ctx.get('narrative', 'Standard league fixture')}
+  * Status: {home} (Rank {league_ctx.get('home_rank', 8)}, {league_ctx.get('home_tier', 'Mid-Table')}) vs {away} (Rank {league_ctx.get('away_rank', 12)}, {league_ctx.get('away_tier', 'Mid-Table')})
+- Sharp Money & Odds Drift: {sharp_sig.get('market_sentiment', 'Neutral')} | Signal: {sharp_sig.get('action_signal', 'Hold')} (Edge vs Vig-Free Fair: {sharp_sig.get('edge_pct', 0.0):+.1f}%)
+
+### QUANTITATIVE MULTI-MARKET OPTIONS (DIXON-COLES PROBABILITY & FAIR ODDS):
 - Double Chance: {json.dumps(multi_markets.get('double_chance', {}))}
 - Draw No Bet (DNB): {json.dumps(multi_markets.get('draw_no_bet', {}))}
 - Totals (Over / Under): {json.dumps(multi_markets.get('totals', {}))}
@@ -264,12 +277,18 @@ Return JSON strictly with these exact keys:
         pick: str, pick_odds: float,
         forebet: Dict, predictz: Dict,
         ml_value: float, ml_prob: float, kelly: float,
-        multi_markets: Optional[Dict] = None, mo_bet: str = ""
+        multi_markets: Optional[Dict] = None, mo_bet: str = "",
+        h2h_data: Optional[Dict] = None, league_ctx: Optional[Dict] = None,
+        sharp_sig: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """High-grade quantitative heuristic analysis fallback"""
         h_score = forebet.get("predicted_score") or predictz.get("predicted_score") or "1-1"
         is_value = ml_value > 0.05
         conf = min(9, max(5, int(ml_prob * 10) + (2 if is_value else 0)))
+
+        h2h_data = h2h_data or {}
+        league_ctx = league_ctx or {}
+        sharp_sig = sharp_sig or {}
 
         alt_options = []
         if mo_bet:
@@ -287,22 +306,32 @@ Return JSON strictly with these exact keys:
             elif "Away +0.5" in ah and ah["Away +0.5"]["prob"] > 0.60:
                 alt_options.append({"option": "Away +0.5", "market_type": "Asian Handicap", "rationale": f"Covers away win or draw ({ah['Away +0.5']['prob']*100:.0f}% probability)"})
 
-        # Dynamic tactical breakdown based on specific odds and teams
+        # Dynamic tactical breakdown based on specific odds, H2H, and table motivation
+        h2h_label = h2h_data.get("dominance_label", "Balanced Rivalry")
+        mot_narrative = league_ctx.get("narrative", "")
+        sharp_action = sharp_sig.get("action_signal", "Hold")
+
         if odds[0] < 1.70:
-            tac = f"{home} enter with significant market dominance at odds {odds[0]:.2f}. High home offensive pressure and possession dominance expected against {away}."
+            tac = f"{home} enter with market dominance at odds {odds[0]:.2f}. {h2h_label}. {mot_narrative}"
         elif odds[2] < 1.70:
-            tac = f"{away} are strong market favorites at odds {odds[2]:.2f}. Counter-attacking vulnerabilities likely for {home} as the visitors dictate game pace."
+            tac = f"{away} are strong market favorites at odds {odds[2]:.2f}. {h2h_label}. {mot_narrative}"
         else:
-            tac = f"Evenly matched tactical clash between {home} (odds {odds[0]:.2f}) and {away} (odds {odds[2]:.2f}). Midfield contest with consensus projecting scoreline around {h_score}."
+            tac = f"Evenly matched tactical clash between {home} and {away}. {h2h_label}. Consensus projecting scoreline around {h_score}."
+
+        edge_text = f"SportyBet selection: {pick} @ {pick_odds:.2f} (Implied: {100.0/pick_odds if pick_odds>0 else 50:.1f}%). Model true probability: {ml_prob*100:.1f}% (Edge: {ml_value:+.2%}). Market Signal: {sharp_action}."
+
+        risk_list = [
+            f"Finishing variance in low-margin chance conversion",
+            f"H2H dynamic: {h2h_label}"
+        ]
+        if h2h_data.get("is_bogey_team"):
+            risk_list.append(f"Bogey team risk: Underdog has historically overperformed in this fixture")
 
         return {
             "tactical_overview": tac,
             "consensus_agreement": "High" if forebet.get("predicted_score") and predictz.get("prediction") else "Moderate",
-            "edge_evaluation": f"SportyBet selection: {pick} @ {pick_odds:.2f} (Implied: {100.0/pick_odds if pick_odds>0 else 50:.1f}%). Model true probability: {ml_prob*100:.1f}% (Edge: {ml_value:+.2%}).",
-            "risk_factors": [
-                f"Variance in finishing efficiency and low-margin chance conversion",
-                f"Tactical game state shift if early goal is conceded"
-            ],
+            "edge_evaluation": edge_text,
+            "risk_factors": risk_list,
             "ai_verdict": f"Value Bet (Back {pick} @ {pick_odds:.2f})" if is_value else f"Fair Play: Market price aligns with probability",
             "confidence_score": conf,
             "recommended_stake": f"{max(1.0, min(5.0, kelly)):.1f}% Bankroll" if is_value else "1.0% Flat",

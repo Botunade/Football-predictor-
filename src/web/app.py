@@ -151,6 +151,10 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
                 prediction = predict_match(feat.to_dict(), "football")
                 stats_obj = await aggregator.get_match_stats(match.get("home_team", ""), match.get("away_team", ""))
                 c_stats = stats_obj.to_dict()
+                c_stats["h2h_data"] = feat.h2h_data
+                c_stats["league_context"] = feat.league_context
+                c_stats["sharp_money"] = feat.sharp_money
+
                 async with sem:
                     ai_analysis = await asyncio.to_thread(ai_agent.analyze_fixture, match, c_stats, prediction)
 
@@ -158,6 +162,11 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
                     "match": match,
                     "prediction": prediction,
                     "consensus_stats": c_stats,
+                    "enrichment": {
+                        "h2h": feat.h2h_data,
+                        "league_context": feat.league_context,
+                        "sharp_money": feat.sharp_money
+                    },
                     "ai_analysis": ai_analysis
                 }
             except Exception as e:
@@ -238,6 +247,10 @@ async def analyze_code(request: Request, code: str = Form(...)):
                 prediction = predict_match(feat.to_dict(), "football")
                 stats_obj = await aggregator.get_match_stats(match.get("home_team", ""), match.get("away_team", ""))
                 c_stats = stats_obj.to_dict()
+                c_stats["h2h_data"] = feat.h2h_data
+                c_stats["league_context"] = feat.league_context
+                c_stats["sharp_money"] = feat.sharp_money
+
                 async with sem:
                     ai_analysis = await asyncio.to_thread(ai_agent.analyze_fixture, match, c_stats, prediction)
 
@@ -245,6 +258,11 @@ async def analyze_code(request: Request, code: str = Form(...)):
                     "match": match,
                     "prediction": prediction,
                     "consensus_stats": c_stats,
+                    "enrichment": {
+                        "h2h": feat.h2h_data,
+                        "league_context": feat.league_context,
+                        "sharp_money": feat.sharp_money
+                    },
                     "ai_analysis": ai_analysis
                 }
             except Exception as e:

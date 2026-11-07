@@ -78,6 +78,11 @@ class MatchFeatures:
     forebet_score: str = ""
     predictz_score: str = ""
 
+    # Phase 2 Enrichment: Direct H2H, League Table Motivation, and Sharp Money
+    h2h_data: Dict[str, Any] = field(default_factory=dict)
+    league_context: Dict[str, Any] = field(default_factory=dict)
+    sharp_money: Dict[str, Any] = field(default_factory=dict)
+
     def to_list(self, feature_columns: List[str] = None) -> List[float]:
         """Convert to ordered list for model input"""
         if feature_columns is None:
@@ -146,7 +151,10 @@ class MatchFeatures:
             "consensus_draw_prob": round(self.consensus_draw_prob, 4),
             "consensus_away_prob": round(self.consensus_away_prob, 4),
             "forebet_score": self.forebet_score,
-            "predictz_score": self.predictz_score
+            "predictz_score": self.predictz_score,
+            "h2h_data": self.h2h_data,
+            "league_context": self.league_context,
+            "sharp_money": self.sharp_money
         }
 
 
@@ -307,6 +315,48 @@ class FeatureBuilder:
         if c_h != 0.33:
             market["public_sentiment"] = c_h
 
+        # Phase 2 Enrichment: Direct H2H, Table Standings Motivation, Sharp Money Signals
+        h2h_dict, league_mot_dict, sharp_dict = {}, {}, {}
+        if sport == "football":
+            try:
+                try:
+                    from ..data_extractor.enrichment_engine import DataEnrichmentEngine
+                except (ImportError, ValueError):
+                    try:
+                        from data_extractor.enrichment_engine import DataEnrichmentEngine
+                    except ImportError:
+                        from src.data_extractor.enrichment_engine import DataEnrichmentEngine
+
+                h2h_summary = DataEnrichmentEngine.analyze_h2h(
+                    home_team=h_name,
+                    away_team=a_name,
+                    odds_home=odds_home,
+                    odds_away=odds_away
+                )
+                h2h_dict = h2h_summary.to_dict()
+
+                league_mot = DataEnrichmentEngine.evaluate_league_context(
+                    home_team=h_name,
+                    away_team=a_name,
+                    league=str(fixture.get("league", "General")),
+                    odds_home=odds_home,
+                    odds_away=odds_away
+                )
+                league_mot_dict = league_mot.to_dict()
+
+                fair_price = 1.0 / c_h if c_h > 0 else (odds_home if odds_home > 0 else 2.0)
+                sharp_sig = DataEnrichmentEngine.track_sharp_money(
+                    home_team=h_name,
+                    away_team=a_name,
+                    bookmaker_odds=odds_home if odds_home > 0 else 2.0,
+                    fair_odds=fair_price,
+                    model_prob=c_h,
+                    selected_outcome=str(fixture.get("selected_outcome", "Home"))
+                )
+                sharp_dict = sharp_sig.to_dict()
+            except Exception as e:
+                logger.debug(f"Enrichment engine error: {e}")
+
         # Create feature object
         features = MatchFeatures(
             match_id=match_id,
@@ -339,7 +389,10 @@ class FeatureBuilder:
             consensus_draw_prob=c_d,
             consensus_away_prob=c_a,
             forebet_score=fb_score,
-            predictz_score=pz_score
+            predictz_score=pz_score,
+            h2h_data=h2h_dict,
+            league_context=league_mot_dict,
+            sharp_money=sharp_dict
         )
 
         # Cache if enabled

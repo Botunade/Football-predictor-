@@ -136,6 +136,45 @@ class StatsAggregator:
         self._betensured_cache: List[BetensuredPrediction] = []
         self._last_refresh: float = 0.0
         self._lock = asyncio.Lock()
+        self._catalog_cache: List[Dict[str, Any]] = []
+        self._load_cache_from_disk()
+
+    def _disk_cache_path(self):
+        from pathlib import Path
+        p = Path(__file__).resolve().parent.parent.parent.parent / "data" / "scraped_cache.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _load_cache_from_disk(self):
+        try:
+            p = self._disk_cache_path()
+            if p.exists():
+                import json
+                data = json.loads(p.read_text(encoding="utf-8"))
+                self._forebet_cache = [ForebetPrediction(**m) for m in data.get("forebet", [])]
+                self._predictz_cache = [PredictZPrediction(**m) for m in data.get("predictz", [])]
+                self._matchoutlook_cache = [MatchOutlookPrediction(**m) for m in data.get("matchoutlook", [])]
+                self._scoregpt_cache = [ScoreGPTPrediction(**m) for m in data.get("scoregpt", [])]
+                self._betensured_cache = [BetensuredPrediction(**m) for m in data.get("betensured", [])]
+                self._last_refresh = data.get("timestamp", time.time())
+        except Exception as e:
+            logger.debug(f"Failed to load disk cache: {e}")
+
+    def _save_cache_to_disk(self):
+        try:
+            p = self._disk_cache_path()
+            import json
+            data = {
+                "timestamp": self._last_refresh,
+                "forebet": [m.to_dict() for m in self._forebet_cache],
+                "predictz": [m.to_dict() for m in self._predictz_cache],
+                "matchoutlook": [m.to_dict() for m in self._matchoutlook_cache],
+                "scoregpt": [m.to_dict() for m in self._scoregpt_cache],
+                "betensured": [m.to_dict() for m in self._betensured_cache]
+            }
+            p.write_text(json.dumps(data), encoding="utf-8")
+        except Exception as e:
+            logger.debug(f"Failed to save disk cache: {e}")
 
     def _normalize_name(self, name: str) -> str:
         """Normalize team names for fast fuzzy matching"""
@@ -170,6 +209,8 @@ class StatsAggregator:
             jaccard = overlap / len(tokens_a.union(tokens_b))
             if jaccard >= 0.5:
                 return 0.85
+        if not norm_a or not norm_b or (norm_a[0] != norm_b[0] and overlap == 0):
+            return 0.0
         return difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
 
     async def refresh_if_needed(self, force: bool = False):
@@ -219,6 +260,7 @@ class StatsAggregator:
                 logger.error(f"Failed to refresh Betensured: {e}")
 
             self._last_refresh = time.time()
+            self._save_cache_to_disk()
             logger.info(f"Statistics refreshed: {len(self._forebet_cache)} Forebet, {len(self._predictz_cache)} PredictZ, {len(self._matchoutlook_cache)} MatchOutlook, {len(self._scoregpt_cache)} ScoreGPT, {len(self._betensured_cache)} Betensured")
 
     def find_forebet_match(self, home: str, away: str) -> Optional[ForebetPrediction]:
@@ -328,7 +370,8 @@ class StatsAggregator:
         """
         Aggregate multi-site statistics for a given match.
         """
-        await self.refresh_if_needed()
+        if not self._forebet_cache and not self._predictz_cache:
+            await self.refresh_if_needed()
 
         match_str = f"{home_team} vs {away_team}"
         fb_pred = self.find_forebet_match(home_team, away_team)
@@ -450,6 +493,9 @@ class StatsAggregator:
         Consolidate and deduplicate all scraped fixtures across all 5 prediction platforms
         into a structured catalog for user game-selection and interactive analysis.
         """
+        if self._catalog_cache:
+            return self._catalog_cache
+
         fixtures_map: Dict[str, Dict[str, Any]] = {}
 
         def get_key(home: str, away: str) -> str:
@@ -597,6 +643,7 @@ class StatsAggregator:
         fixture_list = list(fixtures_map.values())
         # Sort so fixtures with multiple sources appear at top
         fixture_list.sort(key=lambda x: (len(x["sources"]), x["league"]), reverse=True)
+        self._catalog_cache = fixture_list
         return fixture_list
 
 
