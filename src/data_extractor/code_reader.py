@@ -27,6 +27,18 @@ try:
 except ImportError:
     from sportybet_scraper import SportyBetScraper, ScrapingError
 
+try:
+    from utils.proactor_helper import run_coro_with_proactor, run_in_proactor_thread
+except ImportError:
+    try:
+        from src.utils.proactor_helper import run_coro_with_proactor, run_in_proactor_thread
+    except ImportError:
+        try:
+            from ..utils.proactor_helper import run_coro_with_proactor, run_in_proactor_thread
+        except ImportError:
+            run_coro_with_proactor = None
+            run_in_proactor_thread = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -517,6 +529,17 @@ async def extract_betting_code_async(
             method="validation"
         )
 
+    if run_coro_with_proactor is not None:
+        return await run_coro_with_proactor(
+            _extract_code_async,
+            code=code,
+            headless=headless,
+            output_file=output_file,
+            use_api_fallback=use_api_fallback,
+            timeout=timeout,
+            max_retries=max_retries
+        )
+
     return await _extract_code_async(
         code=code,
         headless=headless,
@@ -537,8 +560,19 @@ def extract_betting_code(
 ) -> Dict[str, Any]:
     """
     Synchronous interface for extracting matches from booking codes.
-    Safely delegates to background thread if called within an existing event loop.
+    Safely delegates to Proactor worker thread on Windows to guarantee subprocess compatibility.
     """
+    if run_in_proactor_thread is not None:
+        return run_in_proactor_thread(
+            extract_betting_code_async,
+            code=code,
+            headless=headless,
+            output_file=output_file,
+            use_api_fallback=use_api_fallback,
+            timeout=timeout,
+            max_retries=max_retries
+        )
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

@@ -19,6 +19,17 @@ from .matchoutlook_scraper import MatchOutlookScraper, MatchOutlookPrediction
 from .scoregpt_scraper import ScoreGPTScraper, ScoreGPTPrediction
 from .betensured_scraper import BetensuredScraper, BetensuredPrediction
 
+try:
+    from utils.proactor_helper import run_coro_with_proactor
+except ImportError:
+    try:
+        from src.utils.proactor_helper import run_coro_with_proactor
+    except ImportError:
+        try:
+            from ...utils.proactor_helper import run_coro_with_proactor
+        except ImportError:
+            run_coro_with_proactor = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,24 +235,43 @@ class StatsAggregator:
                 return
 
             logger.info("Refreshing external statistics from Forebet, PredictZ & MatchOutlook...")
+
+            async def _run_fb():
+                async with ForebetScraper(headless=True) as fb_scraper:
+                    return await fb_scraper.scrape_predictions()
+
+            async def _run_pz():
+                async with PredictZScraper(headless=True) as pz_scraper:
+                    return await pz_scraper.scrape_all_leagues()
+
+            async def _run_mo():
+                async with MatchOutlookScraper(headless=True) as mo_scraper:
+                    return await mo_scraper.scrape_predictions()
+
             try:
                 # Scrape Forebet
-                async with ForebetScraper(headless=True) as fb_scraper:
-                    self._forebet_cache = await fb_scraper.scrape_predictions()
+                if run_coro_with_proactor is not None:
+                    self._forebet_cache = await run_coro_with_proactor(_run_fb)
+                else:
+                    self._forebet_cache = await _run_fb()
             except Exception as e:
                 logger.error(f"Failed to refresh Forebet: {e}")
 
             try:
                 # Scrape PredictZ
-                async with PredictZScraper(headless=True) as pz_scraper:
-                    self._predictz_cache = await pz_scraper.scrape_all_leagues()
+                if run_coro_with_proactor is not None:
+                    self._predictz_cache = await run_coro_with_proactor(_run_pz)
+                else:
+                    self._predictz_cache = await _run_pz()
             except Exception as e:
                 logger.error(f"Failed to refresh PredictZ: {e}")
 
             try:
                 # Scrape MatchOutlook
-                async with MatchOutlookScraper(headless=True) as mo_scraper:
-                    self._matchoutlook_cache = await mo_scraper.scrape_predictions()
+                if run_coro_with_proactor is not None:
+                    self._matchoutlook_cache = await run_coro_with_proactor(_run_mo)
+                else:
+                    self._matchoutlook_cache = await _run_mo()
             except Exception as e:
                 logger.error(f"Failed to refresh MatchOutlook: {e}")
 
@@ -260,6 +290,7 @@ class StatsAggregator:
                 logger.error(f"Failed to refresh Betensured: {e}")
 
             self._last_refresh = time.time()
+            self._catalog_cache = []
             self._save_cache_to_disk()
             logger.info(f"Statistics refreshed: {len(self._forebet_cache)} Forebet, {len(self._predictz_cache)} PredictZ, {len(self._matchoutlook_cache)} MatchOutlook, {len(self._scoregpt_cache)} ScoreGPT, {len(self._betensured_cache)} Betensured")
 

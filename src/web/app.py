@@ -5,19 +5,33 @@ Simple web app for interacting with the prediction pipeline
 
 import asyncio
 import json
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+
+# Enforce Windows Proactor Loop & Silence Transport Deallocator Bug
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except Exception:
+        pass
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from utils.proactor_helper import patch_windows_asyncio
+    patch_windows_asyncio()
+except Exception:
+    pass
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import uvicorn
-import sys
-
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from data_extractor.code_reader import extract_betting_code, extract_betting_code_async
 from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
@@ -82,6 +96,23 @@ async def get_scraped_fixtures():
     aggregator = get_stats_aggregator()
     fixtures = aggregator.get_all_scraped_fixtures()
     return {"status": "success", "count": len(fixtures), "fixtures": fixtures}
+
+
+@app.post("/api/refresh-scraped", response_class=JSONResponse)
+async def api_refresh_scraped():
+    """API endpoint to trigger immediate refresh of all 5 prediction sources"""
+    try:
+        aggregator = get_stats_aggregator()
+        await aggregator.refresh_if_needed(force=True)
+        fixtures = aggregator.get_all_scraped_fixtures()
+        return {
+            "status": "success",
+            "message": f"Successfully refreshed {len(fixtures)} live fixtures across 5 sources",
+            "count": len(fixtures),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.post("/api/preview-code")

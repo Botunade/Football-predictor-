@@ -14,9 +14,11 @@ import argparse
 import sys
 from pathlib import Path
 
-# Silence Windows asyncio proactor closed pipe deallocator bug
+# Silence Windows asyncio proactor closed pipe deallocator bug & set Proactor loop
 if sys.platform == "win32":
     try:
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         import asyncio.proactor_events
         import asyncio.base_subprocess
         def _silence_del(self): pass

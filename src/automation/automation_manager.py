@@ -14,6 +14,17 @@ from dotenv import load_dotenv
 # Load local environment
 load_dotenv(dotenv_path=Path("./.env"), override=True)
 
+try:
+    from utils.proactor_helper import run_coro_with_proactor
+except ImportError:
+    try:
+        from src.utils.proactor_helper import run_coro_with_proactor
+    except ImportError:
+        try:
+            from ..utils.proactor_helper import run_coro_with_proactor
+        except ImportError:
+            run_coro_with_proactor = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,7 +132,7 @@ class AutomationManager:
                 }
             return (await automator.execute_wager(stake=stake, dry_run=dry_run)).to_dict()
 
-    async def execute_booking_code_wager(
+    async def _execute_booking_code_wager_inner(
         self,
         code: str,
         stake: float = 10.0,
@@ -129,14 +140,10 @@ class AutomationManager:
         confirm: bool = False,
         headless: bool = True
     ) -> Dict[str, Any]:
-        """
-        Loads an active booking code into SportyBet, sets 10 NGN stake,
-        and executes either dry-run validation or live wager placement.
-        """
-        if stake > self.max_stake_cap:
-            return {"success": False, "message": f"Stake {stake} exceeds safety cap of {self.max_stake_cap} NGN"}
-
-        from .sportybet_bot import SportyBetAutomator
+        try:
+            from .sportybet_bot import SportyBetAutomator
+        except (ImportError, ValueError):
+            from src.automation.sportybet_bot import SportyBetAutomator
 
         async with SportyBetAutomator(
             phone=self.phone,
@@ -165,6 +172,40 @@ class AutomationManager:
 
             wager_res = await bot.execute_wager(stake=stake, dry_run=dry_run, confirm=confirm)
             return wager_res.to_dict()
+
+    async def execute_booking_code_wager(
+        self,
+        code: str,
+        stake: float = 10.0,
+        dry_run: bool = True,
+        confirm: bool = False,
+        headless: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Loads an active booking code into SportyBet, sets 10 NGN stake,
+        and executes either dry-run validation or live wager placement.
+        Safely routed through Windows Proactor loop.
+        """
+        if stake > self.max_stake_cap:
+            return {"success": False, "message": f"Stake {stake} exceeds safety cap of {self.max_stake_cap} NGN"}
+
+        if run_coro_with_proactor is not None:
+            return await run_coro_with_proactor(
+                self._execute_booking_code_wager_inner,
+                code=code,
+                stake=stake,
+                dry_run=dry_run,
+                confirm=confirm,
+                headless=headless
+            )
+
+        return await self._execute_booking_code_wager_inner(
+            code=code,
+            stake=stake,
+            dry_run=dry_run,
+            confirm=confirm,
+            headless=headless
+        )
 
 
 def get_automation_manager() -> AutomationManager:

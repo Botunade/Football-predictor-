@@ -211,6 +211,7 @@
                         <p class="text-secondary small mb-0">Browse today's fixtures across Forebet, ScoreGPT, PredictZ, Betensured & MatchOutlook. Select any games to run full 2-Way AI analysis.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-outline-success" id="btnRefreshCatalog" onclick="refreshCatalogLive()"><i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refresh Fixtures</button>
                         <button class="btn btn-sm btn-outline-primary" onclick="selectAllFiltered(true)"><i class="bi bi-check-all"></i> Select All</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="selectAllFiltered(false)"><i class="bi bi-x-circle"></i> Clear</button>
                         <button class="btn btn-sm btn-outline-info" onclick="selectTopN(5)"><i class="bi bi-stars"></i> Select Top 5</button>
@@ -621,6 +622,28 @@
             document.getElementById('sourceTitleInput').value = `${code} (${payload.length} Selected)`;
             showLoading(`Analyzing ${payload.length} Selected Matches...`, 'Evaluating multi-markets & 2-way AI');
             document.getElementById('selectedForm').submit();
+        }
+
+        async function refreshCatalogLive() {
+            const btn = document.getElementById('btnRefreshCatalog');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Scraping 5 Platforms...';
+
+            try {
+                const resp = await fetch('/api/refresh-scraped', { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    window.location.reload();
+                } else {
+                    alert('Scraper refresh notification: ' + (data.message || 'Error occurred'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refresh Fixtures';
+                }
+            } catch (err) {
+                alert('Network error while refreshing fixtures: ' + err);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refresh Fixtures';
+            }
         }
 
         function submitCustomMatch() {
