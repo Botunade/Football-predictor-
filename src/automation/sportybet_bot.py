@@ -5,6 +5,7 @@ stake configuration, dry-run validation, and wager execution on SportyBet Nigeri
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -526,39 +527,54 @@ class SportyBetAutomator:
             )
 
     async def clear_betslip(self) -> bool:
-        """Removes all current selections from the betslip"""
+        """Removes all current selections from the betslip, including confirming the Remove Betslip 'OK' dialog"""
         if not self._page:
             return False
 
         try:
             items_count = await self._page.evaluate(
-                "() => document.querySelectorAll('.m-betslips .m-item, .m-item').length"
+                "() => document.querySelectorAll('.m-betslips .m-item-team, .m-betslips .m-item-play').length"
             )
             if items_count == 0:
                 logger.debug("Betslip is already empty.")
                 return True
 
             logger.info(f"Clearing {items_count} items from betslip...")
-            # Click all delete icons and Remove All via JS eval
+            # 1. Click 'Remove All' button in betslip
             await self._page.evaluate("""() => {
-                const deletes = document.querySelectorAll('.m-icon-delete');
-                deletes.forEach(d => d.click());
-                const removeAll = document.querySelector('.m-betslips .m-text-min');
+                const removeAll = document.querySelector('.m-betslips .m-text-min') ||
+                                  Array.from(document.querySelectorAll('.m-betslips span, .m-betslips a, .m-betslips button')).find(
+                                      e => e.innerText && e.innerText.trim() === 'Remove All'
+                                  );
                 if (removeAll) removeAll.click();
             }""")
-            await self._page.wait_for_timeout(1000)
+            await self._page.wait_for_timeout(600)
 
-            # Confirm if modal appears
+            # 2. Click 'OK' / 'Confirm' / 'Yes' on the Remove Betslip confirmation modal
             await self._page.evaluate("""() => {
-                const btn = Array.from(document.querySelectorAll('button, .af-button')).find(
-                    e => e.innerText && ['Confirm', 'Yes'].includes(e.innerText.trim())
+                const btn = Array.from(document.querySelectorAll('.es-dialog-btn, .m-dialog-btn, .af-dialog button, .es-dialog a, .es-dialog span, button, .af-button, span')).find(
+                    e => e.innerText && ['OK', 'Confirm', 'Yes'].includes(e.innerText.trim())
                 );
                 if (btn) btn.click();
             }""")
-            await self._page.wait_for_timeout(1000)
+            await self._page.wait_for_timeout(800)
+
+            # 3. Fallback: click individual delete icons one by one if any real betslip items still remain
+            for _ in range(10):
+                remaining_now = await self._page.evaluate("""() => {
+                    const del = document.querySelector('.m-betslips .m-icon-delete');
+                    if (del) {
+                        del.click();
+                        return document.querySelectorAll('.m-betslips .m-item-team').length;
+                    }
+                    return 0;
+                }""")
+                if remaining_now == 0:
+                    break
+                await self._page.wait_for_timeout(250)
 
             remaining = await self._page.evaluate(
-                "() => document.querySelectorAll('.m-betslips .m-item, .m-item').length"
+                "() => document.querySelectorAll('.m-betslips .m-item-team').length"
             )
             logger.info(f"Betslip clear completed. Remaining items: {remaining}")
             return remaining == 0
@@ -691,9 +707,10 @@ class SportyBetAutomator:
                 disabled = await place_btn.is_disabled() or "is-disabled" in btn_cls or "disabled" in btn_cls
                 can_place = (not disabled) and (not has_unavailable) and (len(parsed_items) > 0)
 
-            # Read stake and potential win
+            # Read stake, actual Total Stake, active tab mode, and potential win
             stake_val = 0.0
             pot_win = 0.0
+            tab_mode = "Single"
             stake_inp = await self._page.query_selector(self.SEL_STAKE_INPUT)
             if stake_inp:
                 inp_val = await stake_inp.input_value()
@@ -702,21 +719,36 @@ class SportyBetAutomator:
                 except Exception:
                     pass
 
-            win_text = await self._page.eval_on_selector(
-                ".m-stake",
-                """
-                el => {
-                    const text = el.innerText || '';
-                    const match = text.match(/Potential Win[\\s\\S]*?([\\d,]+\\.\\d{2})/);
-                    return match ? match[1] : null;
+            stake_info = await self._page.evaluate("""() => {
+                const stakeEl = document.querySelector('.m-stake');
+                const text = stakeEl ? (stakeEl.innerText || '') : '';
+                const winMatch = text.match(/Potential Win[\\s\\S]*?([\\d,]+\\.\\d{2})/);
+                const totMatch = text.match(/Total Stake[\\s\\S]*?([\\d,]+\\.\\d{2})/);
+                let activeTab = 'Single';
+                const multTab = Array.from(document.querySelectorAll('.m-betslips li, .m-betslips .m-tab-nav-item, .m-betslips span')).find(
+                    e => e.innerText && e.innerText.trim() === 'Multiple' && (e.className.includes('active') || (e.parentElement && e.parentElement.className.includes('active')))
+                );
+                if (multTab || text.includes('Multiple')) {
+                    activeTab = 'Multiple';
                 }
-                """
-            )
-            if win_text:
-                try:
-                    pot_win = float(win_text.replace(",", ""))
-                except Exception:
-                    pass
+                return {
+                    win: winMatch ? winMatch[1] : null,
+                    totalStake: totMatch ? totMatch[1] : null,
+                    tabMode: activeTab
+                };
+            }""")
+            if stake_info:
+                if stake_info.get("win"):
+                    try:
+                        pot_win = float(stake_info["win"].replace(",", ""))
+                    except Exception:
+                        pass
+                if stake_info.get("totalStake"):
+                    try:
+                        stake_val = float(stake_info["totalStake"].replace(",", ""))
+                    except Exception:
+                        pass
+                tab_mode = stake_info.get("tabMode") or ("Multiple" if len(parsed_items) >= 2 else "Single")
 
             return BetslipState(
                 item_count=len(parsed_items),
@@ -724,6 +756,7 @@ class SportyBetAutomator:
                 has_unavailable=has_unavailable,
                 total_stake=stake_val,
                 potential_win=pot_win,
+                tab_mode=tab_mode,
                 can_place_bet=can_place
             )
 
@@ -733,12 +766,24 @@ class SportyBetAutomator:
 
     async def set_stake(self, amount: Optional[float] = None) -> float:
         """
-        Sets the stake value in the betslip (default: 10.0 NGN).
-        Returns the confirmed stake amount.
+        Switches betslip to 'Multiple' tab if 2+ items are loaded,
+        sets the stake value (default: 10.0 NGN), and returns the confirmed Total Stake.
         """
         stake_amount = float(amount if amount is not None else self.default_stake)
         if not self._page:
             return 0.0
+
+        # Ensure 'Multiple' (accumulator) tab is active when 2+ selections are present
+        await self._page.evaluate("""() => {
+            const items = document.querySelectorAll('.m-betslips .m-item, .m-item').length;
+            if (items >= 2) {
+                const multTab = Array.from(document.querySelectorAll('.m-betslips li, .m-betslips .m-tab-nav-item, .m-betslips span, .m-betslips div')).find(
+                    e => e.innerText && e.innerText.trim() === 'Multiple'
+                );
+                if (multTab) multTab.click();
+            }
+        }""")
+        await self._page.wait_for_timeout(400)
 
         stake_inp = await self._page.query_selector(self.SEL_STAKE_INPUT)
         if not stake_inp:
@@ -759,27 +804,127 @@ class SportyBetAutomator:
             logger.error(f"Error setting stake: {e}")
             return 0.0
 
+    @staticmethod
+    def generate_booking_code_via_api(matches: List[Dict[str, Any]]) -> Optional[str]:
+        """
+        Directly posts distinct match selections (eventId + outcomeId) to SportyBet's
+        official /api/ng/orders/share endpoint.
+        Executes in < 1 second, requires no headless browser, never clicks wrong DOM elements,
+        and guarantees 1 outcome per match so accumulator mode ('Multiple') is always preserved.
+        """
+        import urllib.request
+        try:
+            try:
+                from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
+            except ImportError:
+                from src.data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
+
+            agg = get_stats_aggregator()
+        except Exception:
+            agg = None
+
+        selections = []
+        seen_events = set()
+
+        for m in matches:
+            event_id = str(m.get("sporty_id") or m.get("fixture", {}).get("sporty_id") or "").strip()
+            home = str(m.get("home_team") or "").strip()
+            away = str(m.get("away_team") or "").strip()
+            pick_raw = str(m.get("selected_outcome") or "Home").lower().strip()
+
+            if not event_id and agg and (home or away):
+                sb_match = agg.find_sportybet_match(home, away)
+                if sb_match and sb_match.sporty_id:
+                    event_id = sb_match.sporty_id
+
+            if not event_id or not event_id.startswith("sr:match:") or event_id in seen_events:
+                continue
+
+            if pick_raw in ("away", "2", "x2"):
+                outcome_id = "3"
+            elif pick_raw in ("draw", "x"):
+                outcome_id = "2"
+            else:
+                outcome_id = "1"
+
+            seen_events.add(event_id)
+            selections.append({
+                "eventId": event_id,
+                "marketId": "1",
+                "outcomeId": outcome_id,
+                "specifier": ""
+            })
+
+        # Supplement from live SportyBet cache if any requested matches lacked a sporty_id
+        if len(selections) < len(matches) and agg and agg._sportybet_cache:
+            for sb in agg._sportybet_cache:
+                if len(selections) >= len(matches):
+                    break
+                if sb.sporty_id and sb.sporty_id.startswith("sr:match:") and sb.sporty_id not in seen_events:
+                    seen_events.add(sb.sporty_id)
+                    outcome_id = "3" if (sb.odds_away > 1.05 and sb.odds_away < sb.odds_home) else "1"
+                    selections.append({
+                        "eventId": sb.sporty_id,
+                        "marketId": "1",
+                        "outcomeId": outcome_id,
+                        "specifier": ""
+                    })
+
+        if not selections:
+            return None
+
+        try:
+            url = "https://www.sportybet.com/api/ng/orders/share"
+            req = urllib.request.Request(
+                url,
+                data=json.dumps({"selections": selections}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                res = json.loads(r.read().decode("utf-8"))
+                share_code = res.get("data", {}).get("shareCode")
+                if share_code:
+                    code_str = str(share_code).strip().upper()
+                    logger.info(f"Generated SportyBet booking code via direct API: {code_str} ({len(selections)} distinct matches)")
+                    return code_str
+        except Exception as e:
+            logger.warning(f"Direct SportyBet share API call failed ({e}), falling back to DOM booking...")
+
+        return None
+
     async def generate_clean_slip(self, selections_count: int = 1) -> Optional[str]:
         """
-        Picks active live/upcoming matches on SportyBet, books the slip,
-        and returns a fresh, valid booking code for testing.
+        Picks active live/upcoming matches on SportyBet (strictly 1 outcome per match row),
+        books the slip, and returns a fresh, valid booking code for testing.
         """
+        # Try direct API first
+        api_code = self.generate_booking_code_via_api([{} for _ in range(selections_count)])
+        if api_code:
+            return api_code
+
         if not self._page or "sportybet.com" not in self._page.url:
             await self.navigate_home()
 
         logger.info(f"Generating clean test booking code with {selections_count} selections...")
         await self.clear_betslip()
 
-        # Ultra-fast JS selection
+        # Select strictly 1 odds button per match row so we never book conflicting outcomes of the same match
         clicked = await self._page.evaluate("""(targetCount) => {
-            const oddsButtons = Array.from(document.querySelectorAll('.m-table-cell--odds, .m-outcome-odds, .af-button--odds, span.m-outcome-odds'));
+            const rows = Array.from(document.querySelectorAll('.match-row, .m-table-row'));
             let count = 0;
-            for (const btn of oddsButtons) {
-                const val = parseFloat(btn.innerText.trim());
-                if (!isNaN(val) && val >= 1.15 && val <= 8.0 && btn.offsetParent !== null) {
-                    btn.click();
-                    count++;
-                    if (count >= targetCount) break;
+            for (const row of rows) {
+                const btn = row.querySelector('.m-table-cell--odds, .m-outcome-odds, .af-button--odds, span.m-outcome-odds');
+                if (btn && btn.offsetParent !== null) {
+                    const val = parseFloat(btn.innerText.trim());
+                    if (!isNaN(val) && val >= 1.15 && val <= 8.0) {
+                        btn.click();
+                        count++;
+                        if (count >= targetCount) break;
+                    }
                 }
             }
             return count;
@@ -842,26 +987,33 @@ class SportyBetAutomator:
 
     async def generate_booking_code_for_matches(self, matches: List[Dict[str, Any]]) -> Optional[str]:
         """
-        Takes a list of selected matches/predictions, finds them on SportyBet,
-        adds the desired picks to the betslip, and clicks 'Book Bet' to return a real booking code.
+        Generates a real SportyBet booking code for the selected matches.
+        Uses fast direct API first (< 1s, exact eventId & outcomeId), with 1-per-row DOM fallback.
         """
+        api_code = self.generate_booking_code_via_api(matches)
+        if api_code:
+            return api_code
+
         if not self._page or "sportybet.com" not in self._page.url:
             await self.navigate_home()
 
-        logger.info(f"Generating SportyBet booking code for {len(matches)} specific matches...")
+        logger.info(f"Generating SportyBet booking code via DOM for {len(matches)} specific matches...")
         await self.clear_betslip()
 
-        # Step 1: Match and click in page context
+        # Step 1 & 2: Match rows and supplement strictly 1 outcome per row (never multiple outcomes on same match)
         clicked = await self._page.evaluate("""(matchList) => {
             let count = 0;
             const rows = Array.from(document.querySelectorAll('.match-row, .m-table-row'));
-            
+            const usedRowIndices = new Set();
+
             for (const m of matchList) {
                 const homeName = (m.home_team || '').toLowerCase().trim();
                 const awayName = (m.away_team || '').toLowerCase().trim();
                 const pick = (m.selected_outcome || 'Home').toLowerCase().trim();
 
-                for (const r of rows) {
+                for (let idx = 0; idx < rows.length; idx++) {
+                    if (usedRowIndices.has(idx)) continue;
+                    const r = rows[idx];
                     const text = r.innerText.toLowerCase();
                     const homeMatch = homeName && (text.includes(homeName) || (homeName.length > 5 && text.includes(homeName.slice(0, 5))));
                     const awayMatch = awayName && (text.includes(awayName) || (awayName.length > 5 && text.includes(awayName.slice(0, 5))));
@@ -879,32 +1031,30 @@ class SportyBetAutomator:
 
                         if (target && target.offsetParent !== null) {
                             target.click();
+                            usedRowIndices.add(idx);
                             count++;
                             break;
                         }
                     }
                 }
             }
-            return count;
-        }""", matches)
 
-        # Step 2: If any matches were not on the current DOM page, supplement up to total count
-        needed = len(matches) - clicked
-        if needed > 0:
-            supplemented = await self._page.evaluate("""(targetCount) => {
-                const oddsButtons = Array.from(document.querySelectorAll('.m-table-cell--odds, .m-outcome-odds, .af-button--odds, span.m-outcome-odds'));
-                let count = 0;
-                for (const btn of oddsButtons) {
+            // Supplement from remaining unused rows (strictly 1 pick per row)
+            for (let idx = 0; idx < rows.length && count < matchList.length; idx++) {
+                if (usedRowIndices.has(idx)) continue;
+                const r = rows[idx];
+                const btn = r.querySelector('.m-table-cell--odds, .m-outcome-odds, .af-button--odds');
+                if (btn && btn.offsetParent !== null) {
                     const val = parseFloat(btn.innerText.trim());
-                    if (!isNaN(val) && val >= 1.20 && val <= 6.0 && btn.offsetParent !== null) {
+                    if (!isNaN(val) && val >= 1.20 && val <= 6.0) {
                         btn.click();
+                        usedRowIndices.add(idx);
                         count++;
-                        if (count >= targetCount) break;
                     }
                 }
-                return count;
-            }""", needed)
-            clicked += supplemented
+            }
+            return count;
+        }""", matches)
 
         if clicked == 0:
             logger.warning("Could not select selections in betslip.")
@@ -1021,9 +1171,27 @@ class SportyBetAutomator:
                 message="Betslip contains unavailable or expired matches. Cannot proceed."
             )
 
-        # 3. Set and verify stake
+        # 3. Set and verify stake (switches to Multiple tab automatically for 2+ items)
         confirmed_stake = await self.set_stake(stake_amount)
         updated_slip = await self.get_betslip_state()
+
+        # 3b. Hard Safety Guard: Ensure Total Stake does not exceed requested stake (e.g. if forced into Single mode)
+        if updated_slip.total_stake > stake_amount * 1.05:
+            screenshot = await self.save_screenshot("stake_safety_halt")
+            return WagerResult(
+                success=False,
+                mode="dry_run" if is_dry_run else "live",
+                stake=updated_slip.total_stake,
+                balance_before=balance_before,
+                item_count=updated_slip.item_count,
+                screenshot_path=screenshot,
+                message=(
+                    f"Safety Halt: SportyBet Total Stake ({updated_slip.total_stake:.2f} NGN) exceeds your "
+                    f"requested stake ({stake_amount:.2f} NGN) because the slip contains conflicting outcomes "
+                    f"from the same match (Single mode). Generate a fresh accumulator code first."
+                ),
+                details=updated_slip.to_dict()
+            )
 
         # 4. Check Place Bet button readiness
         place_btn = await self._page.query_selector(self.SEL_PLACE_BET_BTN)

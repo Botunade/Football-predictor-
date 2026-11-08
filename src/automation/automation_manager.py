@@ -43,8 +43,8 @@ class AutomationManager:
         self.password = os.getenv("SPORTY_PASSWORD", "")
         self.default_stake = float(os.getenv("SPORTY_STAKE_TEST", "10.0"))
         self._cached_balance: Dict[str, Any] = {
-            "balance_ngn": 90.93,
-            "balance_text": "NGN 90.93",
+            "balance_ngn": 70.93,
+            "balance_text": "NGN 70.93",
             "user_name": "Boluwatife Adesoji",
             "phone": self.phone,
             "timestamp": time.time()
@@ -99,8 +99,28 @@ class AutomationManager:
 
     async def generate_booking_code(self, matches: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Generates a real SportyBet booking code for the given matches using browser session.
+        Generates a real SportyBet booking code for the given matches.
+        First attempts SportyBet's fast direct Share API (< 1s, no browser needed),
+        then falls back to Playwright browser session if needed.
         """
+        try:
+            try:
+                from .sportybet_bot import SportyBetAutomator
+            except (ImportError, ValueError):
+                from src.automation.sportybet_bot import SportyBetAutomator
+
+            # Fast path: Direct SportyBet Share API (instant, supports all 550+ catalog fixtures)
+            api_code = SportyBetAutomator.generate_booking_code_via_api(matches)
+            if api_code:
+                return {
+                    "success": True,
+                    "code": api_code,
+                    "matches_count": len(matches),
+                    "message": f"Successfully generated booking code {api_code}"
+                }
+        except Exception as e:
+            logger.warning(f"Direct API booking code path failed, falling back to browser: {e}")
+
         async def _generate():
             try:
                 from .sportybet_bot import SportyBetAutomator

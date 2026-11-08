@@ -244,7 +244,7 @@
                         <h5 class="fw-bold mb-0 text-white"><i class="bi bi-robot text-info me-1"></i> SportyBet Auto-Bet Hub</h5>
                     </div>
                     <div class="small text-secondary mb-1">
-                        Patron Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success" id="sportyBalanceSpan">NGN 90.93</strong> <button class="btn btn-outline-success btn-sm py-0 px-1 ms-1" style="font-size: 0.72rem; line-height: 1;" title="Refresh live balance from SportyBet" onclick="refreshSportyBalance(true)"><i class="bi bi-arrow-clockwise" id="balRefreshIcon"></i></button> &bull; Stake: <strong class="text-warning">10.00 NGN</strong>
+                        Patron Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success" id="sportyBalanceSpan">NGN 70.93</strong> <button class="btn btn-outline-success btn-sm py-0 px-1 ms-1" style="font-size: 0.72rem; line-height: 1;" title="Refresh live balance from SportyBet" onclick="refreshSportyBalance(true)"><i class="bi bi-arrow-clockwise" id="balRefreshIcon"></i></button> &bull; Stake: <strong class="text-warning">10.00 NGN</strong>
                     </div>
                     <div class="small text-muted fst-italic">
                         <i class="bi bi-info-circle me-1"></i> Sequence: Load Betslip &bull; Verify Odds &bull; Auth 815****422 &bull; Place Wager
@@ -297,6 +297,7 @@
                  data-conf="{{ conf }}"
                  data-home="{{ match.home_team }}"
                  data-away="{{ match.away_team }}"
+                 data-sporty-id="{{ match.sporty_id or '' }}"
                  data-outcome="{{ match.selected_outcome or 'Home' }}"
                  data-odds="{{ match.selected_odds or match.odds_home or 2.0 }}">
                 
@@ -727,6 +728,7 @@
                     matchesPayload.push({
                         home_team: c.getAttribute('data-home'),
                         away_team: c.getAttribute('data-away'),
+                        sporty_id: c.getAttribute('data-sporty-id') || '',
                         selected_outcome: c.getAttribute('data-outcome') || 'Home'
                     });
                 });

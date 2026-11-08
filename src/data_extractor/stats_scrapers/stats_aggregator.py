@@ -229,9 +229,9 @@ class StatsAggregator:
         return difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
 
     async def refresh_if_needed(self, force: bool = False):
-        """Fetch fresh predictions if cache expired"""
+        """Fetch fresh predictions if cache expired (preserves existing cache on network failure)"""
         now = time.time()
-        if not force and (now - self._last_refresh < self.cache_ttl) and (self._forebet_cache or self._predictz_cache):
+        if not force and (now - self._last_refresh < self.cache_ttl) and (self._forebet_cache or self._predictz_cache or self._sportybet_cache):
             return
 
         async with self._lock:
@@ -241,22 +241,30 @@ class StatsAggregator:
             logger.info("Refreshing live bookmaker odds and external statistics from SportyBet, Forebet, PredictZ & MatchOutlook...")
 
             # 1. Ingest SportyBet (Official Ground Truth Odds via high-scale API)
+            new_sb = []
             try:
-                self._sportybet_cache = SportyBetOddsScraper()._scrape_via_api()
-                logger.info(f"Loaded {len(self._sportybet_cache)} live fixtures from SportyBet official API.")
+                new_sb = SportyBetOddsScraper()._scrape_via_api()
+                logger.info(f"Loaded {len(new_sb)} live fixtures from SportyBet official API.")
             except Exception as e:
                 logger.warning(f"SportyBet API failed ({e}), falling back to DOM scraper...")
+
+            if not new_sb:
                 try:
                     async def _run_sb():
                         async with SportyBetOddsScraper(headless=True) as sb_scraper:
                             return await sb_scraper.scrape_live_odds()
 
                     if run_coro_with_proactor is not None:
-                        self._sportybet_cache = await run_coro_with_proactor(_run_sb)
+                        new_sb = await run_coro_with_proactor(_run_sb)
                     else:
-                        self._sportybet_cache = await _run_sb()
+                        new_sb = await _run_sb()
                 except Exception as e2:
                     logger.error(f"Failed to refresh SportyBet: {e2}")
+
+            if new_sb:
+                self._sportybet_cache = new_sb
+            elif self._sportybet_cache:
+                logger.warning(f"SportyBet refresh returned 0 fixtures; preserving {len(self._sportybet_cache)} cached fixtures.")
 
             async def _run_fb():
                 async with ForebetScraper(headless=True) as fb_scraper:
@@ -272,48 +280,50 @@ class StatsAggregator:
 
             try:
                 # Scrape Forebet
-                if run_coro_with_proactor is not None:
-                    self._forebet_cache = await run_coro_with_proactor(_run_fb)
-                else:
-                    self._forebet_cache = await _run_fb()
+                new_fb = await (run_coro_with_proactor(_run_fb) if run_coro_with_proactor is not None else _run_fb())
+                if new_fb:
+                    self._forebet_cache = new_fb
             except Exception as e:
                 logger.error(f"Failed to refresh Forebet: {e}")
 
             try:
                 # Scrape PredictZ
-                if run_coro_with_proactor is not None:
-                    self._predictz_cache = await run_coro_with_proactor(_run_pz)
-                else:
-                    self._predictz_cache = await _run_pz()
+                new_pz = await (run_coro_with_proactor(_run_pz) if run_coro_with_proactor is not None else _run_pz())
+                if new_pz:
+                    self._predictz_cache = new_pz
             except Exception as e:
                 logger.error(f"Failed to refresh PredictZ: {e}")
 
             try:
                 # Scrape MatchOutlook
-                if run_coro_with_proactor is not None:
-                    self._matchoutlook_cache = await run_coro_with_proactor(_run_mo)
-                else:
-                    self._matchoutlook_cache = await _run_mo()
+                new_mo = await (run_coro_with_proactor(_run_mo) if run_coro_with_proactor is not None else _run_mo())
+                if new_mo:
+                    self._matchoutlook_cache = new_mo
             except Exception as e:
                 logger.error(f"Failed to refresh MatchOutlook: {e}")
 
             try:
                 # Scrape ScoreGPT (Multi-Model AI)
                 async with ScoreGPTScraper() as sg_scraper:
-                    self._scoregpt_cache = await sg_scraper.scrape_predictions()
+                    new_sg = await sg_scraper.scrape_predictions()
+                    if new_sg:
+                        self._scoregpt_cache = new_sg
             except Exception as e:
                 logger.error(f"Failed to refresh ScoreGPT: {e}")
 
             try:
                 # Scrape Betensured
                 async with BetensuredScraper() as be_scraper:
-                    self._betensured_cache = await be_scraper.scrape_predictions()
+                    new_be = await be_scraper.scrape_predictions()
+                    if new_be:
+                        self._betensured_cache = new_be
             except Exception as e:
                 logger.error(f"Failed to refresh Betensured: {e}")
 
             self._last_refresh = time.time()
             self._catalog_cache = []
-            self._save_cache_to_disk()
+            if any([self._sportybet_cache, self._forebet_cache, self._predictz_cache, self._matchoutlook_cache, self._scoregpt_cache, self._betensured_cache]):
+                self._save_cache_to_disk()
             logger.info(f"Statistics refreshed: {len(self._sportybet_cache)} SportyBet, {len(self._forebet_cache)} Forebet, {len(self._predictz_cache)} PredictZ, {len(self._matchoutlook_cache)} MatchOutlook, {len(self._scoregpt_cache)} ScoreGPT, {len(self._betensured_cache)} Betensured")
 
     def find_sportybet_match(self, home: str, away: str) -> Optional[SportyBetFixtureOdds]:
