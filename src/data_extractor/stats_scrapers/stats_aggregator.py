@@ -240,35 +240,23 @@ class StatsAggregator:
 
             logger.info("Refreshing live bookmaker odds and external statistics from SportyBet, Forebet, PredictZ & MatchOutlook...")
 
-            # 1. Scrape SportyBet (Official Ground Truth Odds)
+            # 1. Ingest SportyBet (Official Ground Truth Odds via high-scale API)
             try:
-                async def _run_sb():
-                    async with SportyBetOddsScraper(headless=True) as sb_scraper:
-                        return await sb_scraper.scrape_live_odds()
-
-                if run_coro_with_proactor is not None:
-                    self._sportybet_cache = await run_coro_with_proactor(_run_sb)
-                else:
-                    self._sportybet_cache = await _run_sb()
+                self._sportybet_cache = SportyBetOddsScraper()._scrape_via_api()
+                logger.info(f"Loaded {len(self._sportybet_cache)} live fixtures from SportyBet official API.")
             except Exception as e:
-                logger.warning(f"SportyBet DOM scrape failed ({e}), falling back to direct API...")
+                logger.warning(f"SportyBet API failed ({e}), falling back to DOM scraper...")
                 try:
-                    self._sportybet_cache = SportyBetOddsScraper()._scrape_via_api()
+                    async def _run_sb():
+                        async with SportyBetOddsScraper(headless=True) as sb_scraper:
+                            return await sb_scraper.scrape_live_odds()
+
+                    if run_coro_with_proactor is not None:
+                        self._sportybet_cache = await run_coro_with_proactor(_run_sb)
+                    else:
+                        self._sportybet_cache = await _run_sb()
                 except Exception as e2:
                     logger.error(f"Failed to refresh SportyBet: {e2}")
-
-            # Fast supplement from SportyBet API if needed
-            if len(self._sportybet_cache) < 20:
-                try:
-                    api_sb = SportyBetOddsScraper()._scrape_via_api()
-                    existing_keys = {f"{f.home_team.lower()}_vs_{f.away_team.lower()}" for f in self._sportybet_cache}
-                    for af in api_sb:
-                        k = f"{af.home_team.lower()}_vs_{af.away_team.lower()}"
-                        if k not in existing_keys:
-                            self._sportybet_cache.append(af)
-                            existing_keys.add(k)
-                except Exception:
-                    pass
 
             async def _run_fb():
                 async with ForebetScraper(headless=True) as fb_scraper:
@@ -630,6 +618,8 @@ class StatsAggregator:
                 "odds_draw": od,
                 "odds_away": oa,
                 "sources": ["SportyBet"],
+                "has_sportybet_odds": True,
+                "odds_verified": True,
                 "forebet_score": "",
                 "forebet_probs": "",
                 "scoregpt_pick": "",
@@ -679,6 +669,8 @@ class StatsAggregator:
                     "odds_draw": od,
                     "odds_away": oa,
                     "sources": srcs,
+                    "has_sportybet_odds": ("SportyBet" in srcs),
+                    "odds_verified": ("SportyBet" in srcs),
                     "forebet_score": fb.predicted_score,
                     "forebet_probs": f"H:{fb.prob_home}% D:{fb.prob_draw}% A:{fb.prob_away}%",
                     "scoregpt_pick": "",
@@ -732,6 +724,8 @@ class StatsAggregator:
                     "odds_draw": od,
                     "odds_away": oa,
                     "sources": srcs,
+                    "has_sportybet_odds": ("SportyBet" in srcs),
+                    "odds_verified": ("SportyBet" in srcs),
                     "forebet_score": "",
                     "forebet_probs": "",
                     "scoregpt_pick": "",
@@ -778,6 +772,8 @@ class StatsAggregator:
                     "odds_draw": od,
                     "odds_away": oa,
                     "sources": srcs,
+                    "has_sportybet_odds": ("SportyBet" in srcs),
+                    "odds_verified": ("SportyBet" in srcs),
                     "forebet_score": "",
                     "forebet_probs": "",
                     "scoregpt_pick": tip_text,
@@ -824,6 +820,8 @@ class StatsAggregator:
                     "odds_draw": od,
                     "odds_away": oa,
                     "sources": srcs,
+                    "has_sportybet_odds": ("SportyBet" in srcs),
+                    "odds_verified": ("SportyBet" in srcs),
                     "forebet_score": "",
                     "forebet_probs": "",
                     "scoregpt_pick": "",

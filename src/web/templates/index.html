@@ -174,11 +174,18 @@
                 </div>
 
                 <div class="d-flex align-items-center gap-2">
+                    <div class="badge bg-dark border border-success px-3 py-2 text-white d-flex align-items-center gap-2 shadow-sm">
+                        <i class="bi bi-wallet2 text-success fs-6"></i>
+                        <span>SportyBet: <strong class="text-white" id="navSportyUser">815****422</strong> | <strong class="text-success fs-6" id="navSportyBalance">NGN 90.93</strong></span>
+                        <button class="btn btn-link text-success p-0 ms-1" onclick="refreshGlobalSportyBalance(true)" title="Fetch live balance from SportyBet" style="text-decoration: none;">
+                            <i class="bi bi-arrow-clockwise" id="navBalIcon"></i>
+                        </button>
+                    </div>
                     <span class="badge bg-dark border border-secondary px-3 py-2 text-info">
-                        <i class="bi bi-cloud-check-fill text-success me-1"></i> 5 Scraper Engines Live
+                        <i class="bi bi-cloud-check-fill text-success me-1"></i> 5 Scrapers
                     </span>
                     <span class="badge bg-dark border border-secondary px-3 py-2 text-purple" style="color: #c084fc;">
-                        <i class="bi bi-cpu-fill text-warning me-1"></i> claude-sonnet-5 (9Router)
+                        <i class="bi bi-cpu-fill text-warning me-1"></i> claude-sonnet-5
                     </span>
                 </div>
             </div>
@@ -197,7 +204,7 @@
                 <i class="bi bi-ticket-detailed-fill me-1 text-success"></i> SportyBet Booking Code
             </button>
             <button class="tab-btn" id="tabCustomBtn" onclick="switchTab('custom')">
-                <i class="bi bi-plus-circle-fill me-1 text-warning"></i> Custom Match Builder
+                <i class="bi bi-sliders text-warning me-1"></i> Custom Analyzer &amp; Acca Simulator
             </button>
         </div>
 
@@ -228,11 +235,19 @@
                         </div>
                     </div>
                     <div class="col-md-7">
-                        <div class="d-flex flex-wrap gap-1 align-items-center" style="max-height: 80px; overflow-y: auto;">
-                            <span class="filter-badge active" data-league="ALL" onclick="filterByLeague('ALL', this)">All Leagues</span>
-                            {% for l in leagues[:10] %}
-                            <span class="filter-badge" data-league="{{ l }}" onclick="filterByLeague('{{ l }}', this)">{{ l }}</span>
-                            {% endfor %}
+                        <div class="d-flex flex-wrap gap-1 align-items-center justify-content-between" style="max-height: 80px; overflow-y: auto;">
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                <span class="filter-badge active" data-league="ALL" onclick="filterByLeague('ALL', this)">All Leagues</span>
+                                {% for l in leagues[:10] %}
+                                <span class="filter-badge" data-league="{{ l }}" onclick="filterByLeague('{{ l }}', this)">{{ l }}</span>
+                                {% endfor %}
+                            </div>
+                            <div class="form-check form-switch ms-2 mb-0 d-flex align-items-center gap-1">
+                                <input class="form-check-input" type="checkbox" id="filterSportyOnly" checked onchange="filterFixtures()" style="cursor: pointer;">
+                                <label class="form-check-label text-success fw-bold small" for="filterSportyOnly">
+                                    <i class="bi bi-shield-check me-1"></i>SportyBet Real Odds Only
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -252,13 +267,13 @@
                         </thead>
                         <tbody id="fixtureTableBody">
                             {% for f in scraped_fixtures %}
-                            <tr class="fixture-row" data-id="{{ f.id }}" data-league="{{ f.league }}" data-home="{{ f.home_team }}" data-away="{{ f.away_team }}" data-rec="{{ f.recommended_outcome }}">
+                            <tr class="fixture-row" data-id="{{ f.id }}" data-league="{{ f.league }}" data-home="{{ f.home_team }}" data-away="{{ f.away_team }}" data-rec="{{ f.recommended_outcome }}" data-sporty="{{ 'true' if 'SportyBet' in f.sources else 'false' }}">
                                 <td class="text-center">
                                     <input type="checkbox" class="form-check-input fixture-checkbox" value="{{ f.id }}" onchange="updateSelectionBar()" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
                                 </td>
                                 <td>
                                     <div class="fw-bold text-white fs-6">{{ f.home_team }} <span class="text-secondary fw-normal">vs</span> {{ f.away_team }}</div>
-                                    <div class="small mt-1 d-flex gap-1 flex-wrap">
+                                    <div class="small mt-1 d-flex gap-1 flex-wrap align-items-center">
                                         {% for s in f.sources %}
                                             {% if s == 'SportyBet' %}<span class="source-pill pill-sporty"><i class="bi bi-broadcast me-1"></i>SportyBet Live</span>
                                             {% elif s == 'Forebet' %}<span class="source-pill pill-forebet">Forebet</span>
@@ -293,6 +308,11 @@
                                     </div>
                                 </td>
                                 <td class="text-center">
+                                    {% if 'SportyBet' in f.sources %}
+                                        <div class="badge bg-success-subtle text-success border border-success px-1 py-0 mb-1" style="font-size: 0.65rem;"><i class="bi bi-shield-check me-1"></i>SportyBet Real Odds</div>
+                                    {% else %}
+                                        <div class="badge bg-secondary-subtle text-warning border border-warning px-1 py-0 mb-1" style="font-size: 0.65rem;"><i class="bi bi-exclamation-triangle me-1"></i>Estimated Odds</div>
+                                    {% endif %}
                                     <div class="d-flex justify-content-center gap-1">
                                         <input type="number" step="0.01" class="odds-mini-input opt-h" value="{{ f.odds_home }}" title="Home Odds" placeholder="1">
                                         <input type="number" step="0.01" class="odds-mini-input opt-d" value="{{ f.odds_draw }}" title="Draw Odds" placeholder="X">
@@ -362,54 +382,227 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- TAB 3: CUSTOM MATCH BUILDER               -->
+        <!-- TAB 3: CUSTOM ANALYZER & ACCA SIMULATOR   -->
         <!-- ========================================== -->
         <div id="tabCustom" class="tab-content-area" style="display: none;">
             <div class="row justify-content-center">
-                <div class="col-lg-8">
-                    <div class="card-custom p-4">
-                        <h4 class="fw-bold text-white mb-2"><i class="bi bi-pencil-square text-warning me-2"></i>Custom Match Analysis</h4>
-                        <p class="text-secondary small mb-4">Input any match to run the full quantitative Poisson distribution and 2-way AI verification.</p>
-
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label text-secondary small fw-bold">Home Team</label>
-                                <input type="text" id="custHome" class="form-control bg-dark border-secondary text-white" placeholder="e.g. Manchester City" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label text-secondary small fw-bold">Away Team</label>
-                                <input type="text" id="custAway" class="form-control bg-dark border-secondary text-white" placeholder="e.g. Real Madrid" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label text-secondary small fw-bold">Odds (Home 1)</label>
-                                <input type="number" step="0.01" id="custOddH" class="form-control bg-dark border-secondary text-white" value="1.95">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label text-secondary small fw-bold">Odds (Draw X)</label>
-                                <input type="number" step="0.01" id="custOddD" class="form-control bg-dark border-secondary text-white" value="3.40">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label text-secondary small fw-bold">Odds (Away 2)</label>
-                                <input type="number" step="0.01" id="custOddA" class="form-control bg-dark border-secondary text-white" value="3.80">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label text-secondary small fw-bold">Selected Pick</label>
-                                <select id="custPick" class="form-select bg-dark border-secondary text-white">
-                                    <option value="Home">Home (1)</option>
-                                    <option value="Draw">Draw (X)</option>
-                                    <option value="Away">Away (2)</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label text-secondary small fw-bold">League / Context</label>
-                                <input type="text" id="custLeague" class="form-control bg-dark border-secondary text-white" value="Champions League">
+                <div class="col-lg-10">
+                    <!-- Acca Simulation Card -->
+                    <div class="card-custom p-4 mb-4" style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid #6366f1;">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                            <div>
+                                <span class="badge bg-primary px-3 py-1 mb-2">QUANTITATIVE ACCA BUILDER</span>
+                                <h3 class="fw-bold text-white mb-1"><i class="bi bi-cpu text-info me-2"></i>Target Odds Acca Simulator</h3>
+                                <p class="text-secondary small mb-0">Specify your desired total odds and number of games. The engine runs Monte Carlo simulations across all scraped fixtures with real SportyBet odds to find the mathematically optimal accumulator.</p>
                             </div>
                         </div>
 
-                        <button type="button" class="btn btn-warning w-100 fw-bold py-2 text-dark" onclick="submitCustomMatch()">
-                            <i class="bi bi-play-circle-fill me-1"></i> Run 2-Way AI Analysis on Custom Match
+                        <!-- SportyBet Connected Account & Real-Time Balance Bar -->
+                        <div class="p-3 rounded mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2" style="background: rgba(15, 23, 42, 0.85); border: 1px solid #10b981;">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="p-2 rounded bg-dark border border-success text-success">
+                                    <i class="bi bi-wallet2 fs-5"></i>
+                                </div>
+                                <div>
+                                    <div class="small text-secondary text-uppercase fw-bold" style="font-size: 0.72rem;">Connected SportyBet Account</div>
+                                    <div class="text-white fw-bold">815****422 (<span id="tab3PatronName" class="text-info">Boluwatife Adesoji</span>)</div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="text-end">
+                                    <div class="small text-secondary text-uppercase fw-bold" style="font-size: 0.72rem;">Live Account Balance</div>
+                                    <div class="fs-5 fw-bold text-success" id="tab3BalanceSpan">NGN 90.93</div>
+                                </div>
+                                <button class="btn btn-outline-success btn-sm py-1 px-2 fw-bold" onclick="refreshGlobalSportyBalance(true)" title="Fetch live verified balance from SportyBet">
+                                    <i class="bi bi-arrow-clockwise" id="tab3BalIcon"></i> Refresh
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Parameter Controls -->
+                        <div class="row g-3 mb-4">
+                            <!-- Target Odds -->
+                            <div class="col-md-5">
+                                <label class="form-label text-secondary small fw-bold text-uppercase">Target Total Odds</label>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text bg-dark border-secondary text-warning fw-bold"><i class="bi bi-graph-up-arrow"></i></span>
+                                    <input type="number" step="0.5" min="1.5" max="500" id="simTargetOdds" class="form-control form-control-lg bg-dark border-secondary text-white fw-bold fs-4 text-center" value="10.0">
+                                    <span class="input-group-text bg-dark border-secondary text-secondary">Multiplier</span>
+                                </div>
+                                <div class="d-flex gap-1 flex-wrap">
+                                    <span class="badge bg-secondary cursor-pointer" onclick="setTargetOdds(3.0)" style="cursor: pointer;">3.0x</span>
+                                    <span class="badge bg-secondary cursor-pointer" onclick="setTargetOdds(5.0)" style="cursor: pointer;">5.0x</span>
+                                    <span class="badge bg-primary cursor-pointer" id="badgeOdd10" onclick="setTargetOdds(10.0)" style="cursor: pointer;">10.0x</span>
+                                    <span class="badge bg-secondary cursor-pointer" onclick="setTargetOdds(20.0)" style="cursor: pointer;">20.0x</span>
+                                    <span class="badge bg-secondary cursor-pointer" onclick="setTargetOdds(50.0)" style="cursor: pointer;">50.0x</span>
+                                </div>
+                            </div>
+
+                            <!-- Number of Games -->
+                            <div class="col-md-3">
+                                <label class="form-label text-secondary small fw-bold text-uppercase">Number of Games</label>
+                                <select id="simMatchCount" class="form-select form-select-lg bg-dark border-secondary text-white fw-bold mb-2">
+                                    <option value="2">2 Games (Double)</option>
+                                    <option value="3">3 Games (Treble)</option>
+                                    <option value="4" selected>4 Games (Acca-4)</option>
+                                    <option value="5">5 Games (Acca-5)</option>
+                                    <option value="6">6 Games (Acca-6)</option>
+                                    <option value="8">8 Games (Acca-8)</option>
+                                </select>
+                                <div class="small text-secondary">Combinations evaluated across live catalog</div>
+                            </div>
+
+                            <!-- Optimization Strategy -->
+                            <div class="col-md-4">
+                                <label class="form-label text-secondary small fw-bold text-uppercase">Optimization Strategy</label>
+                                <select id="simStrategy" class="form-select form-select-lg bg-dark border-secondary text-white mb-2">
+                                    <option value="max_prob" selected>Highest Win Probability (Safest)</option>
+                                    <option value="max_ev">Maximum Expected Value (+EV Math Edge)</option>
+                                    <option value="balanced">Balanced Composite Multiplier</option>
+                                </select>
+                                <div class="small text-secondary">Balances probability vs vig-free value</div>
+                            </div>
+                        </div>
+
+                        <!-- Run Simulation Button -->
+                        <button type="button" class="btn btn-warning btn-lg w-100 fw-bold py-3 text-dark shadow-lg" id="btnRunSim" onclick="runAccaSimulation()">
+                            <i class="bi bi-lightning-charge-fill me-1"></i> Run Monte Carlo Simulation &amp; Match Optimal Games
                         </button>
+
+                        <!-- Simulation Results Container -->
+                        <div id="simResultsBox" class="mt-4" style="display: none;">
+                            <hr class="border-secondary mb-4">
+                            
+                            <!-- Acca Summary Banner -->
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 p-3 rounded mb-3" style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;">
+                                <div>
+                                    <span class="badge bg-success px-3 py-1 mb-1">OPTIMAL ACCUMULATOR IDENTIFIED</span>
+                                    <h4 class="fw-bold text-white mb-0" id="simSlipHeader">Combined Odds: <span class="text-warning" id="simSlipOdds">10.42x</span></h4>
+                                </div>
+                                <div class="d-flex gap-3 align-items-center text-end">
+                                    <div>
+                                        <div class="small text-secondary">Joint Win Probability</div>
+                                        <div class="fs-5 fw-bold text-info" id="simSlipProb">36.2%</div>
+                                    </div>
+                                    <div class="border-start border-secondary ps-3">
+                                        <div class="small text-secondary">Expected Return (10 NGN)</div>
+                                        <div class="fs-5 fw-bold text-success" id="simSlipPayout">104.20 NGN</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Table of Matched Games -->
+                            <div class="table-responsive rounded border border-secondary mb-3">
+                                <table class="table table-dark table-hover mb-0 align-middle">
+                                    <thead class="table-secondary" style="background: #1e293b;">
+                                        <tr class="small text-secondary text-uppercase">
+                                            <th>#</th>
+                                            <th>Fixture</th>
+                                            <th>League</th>
+                                            <th>Selected Pick</th>
+                                            <th class="text-center">Odds</th>
+                                            <th class="text-center">Win Probability</th>
+                                            <th>Intelligence Consensus</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="simMatchesTableBody">
+                                        <!-- Hydrated dynamically by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Action Hub for the Simulated Slip -->
+                            <div class="p-3 rounded border border-info bg-dark d-flex justify-content-between align-items-center flex-wrap gap-3">
+                                <div>
+                                    <div class="fw-bold text-white mb-1"><i class="bi bi-robot text-warning me-1"></i> Ready to Automate on SportyBet</div>
+                                    <div class="small text-secondary">Generate SportyBet booking code or directly place 10 NGN wager using account 815****422</div>
+                                </div>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <button type="button" class="btn btn-outline-warning fw-bold btn-sm px-3 py-2" id="btnSimGenCode" onclick="generateCodeForSimSlip()">
+                                        <i class="bi bi-qr-code me-1"></i> Generate SportyBet Code
+                                    </button>
+                                    <button type="button" class="btn btn-primary fw-bold btn-sm px-3 py-2" onclick="analyzeSimulatedSlip()">
+                                        <i class="bi bi-cpu-fill me-1"></i> Run 2-Way AI Verification
+                                    </button>
+                                    <button type="button" class="btn btn-success fw-bold btn-sm px-3 py-2" id="btnSimPlayBet" onclick="playSimulatedBetDirect()">
+                                        <i class="bi bi-play-circle-fill me-1"></i> Play 10 NGN on SportyBet
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Generated Code Notification Box -->
+                            <div id="simCodeBanner" class="alert alert-success mt-3 py-2 d-none">
+                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                    <div>
+                                        <i class="bi bi-check-circle-fill text-success me-1"></i> SportyBet Booking Code: <strong class="fs-5 text-warning mx-2" id="simCodeDisplay">------</strong>
+                                        <button class="btn btn-outline-light btn-sm py-0 px-2 ms-2" onclick="copySimCode()"><i class="bi bi-clipboard"></i> Copy</button>
+                                    </div>
+                                    <span class="small text-muted">Ready to paste or automate</span>
+                                </div>
+                            </div>
+
+                            <!-- Play Bet Status Box -->
+                            <div id="simBetStatusArea" class="alert alert-secondary mt-3 py-2 small d-none">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="spinner-border spinner-border-sm text-info" id="simBetSpinner" role="status"></div>
+                                    <span id="simBetStatusText">Processing automated wager...</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- Collapsible Custom Single Match Builder -->
+                    <div class="card-custom p-4 mb-4">
+                        <div class="d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleSingleMatchBuilder()">
+                            <div>
+                                <h5 class="fw-bold text-white mb-0"><i class="bi bi-pencil-square text-secondary me-2"></i>Custom Single Match Builder (Manual Input)</h5>
+                                <div class="small text-secondary">Manually enter a match name and custom odds to run individual Poisson analysis</div>
+                            </div>
+                            <i class="bi bi-chevron-down text-secondary" id="singleMatchChevron"></i>
+                        </div>
+
+                        <div id="singleMatchFormArea" class="mt-3" style="display: none;">
+                            <hr class="border-secondary mb-3">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label text-secondary small fw-bold">Home Team</label>
+                                    <input type="text" id="custHome" class="form-control bg-dark border-secondary text-white" placeholder="e.g. Manchester City">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-secondary small fw-bold">Away Team</label>
+                                    <input type="text" id="custAway" class="form-control bg-dark border-secondary text-white" placeholder="e.g. Real Madrid">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label text-secondary small fw-bold">Odds (Home 1)</label>
+                                    <input type="number" step="0.01" id="custOddH" class="form-control bg-dark border-secondary text-white" value="1.95">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label text-secondary small fw-bold">Odds (Draw X)</label>
+                                    <input type="number" step="0.01" id="custOddD" class="form-control bg-dark border-secondary text-white" value="3.40">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label text-secondary small fw-bold">Odds (Away 2)</label>
+                                    <input type="number" step="0.01" id="custOddA" class="form-control bg-dark border-secondary text-white" value="3.80">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-secondary small fw-bold">Selected Pick</label>
+                                    <select id="custPick" class="form-select bg-dark border-secondary text-white">
+                                        <option value="Home">Home (1)</option>
+                                        <option value="Draw">Draw (X)</option>
+                                        <option value="Away">Away (2)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-secondary small fw-bold">League / Context</label>
+                                    <input type="text" id="custLeague" class="form-control bg-dark border-secondary text-white" value="Champions League">
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline-warning w-100 fw-bold py-2" onclick="submitCustomMatch()">
+                                <i class="bi bi-play-circle-fill me-1"></i> Run 2-Way AI Analysis on Custom Match
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -448,14 +641,24 @@
             document.getElementById('tabCustomBtn').className = 'tab-btn' + (tab === 'custom' ? ' active' : '');
         }
 
+        let activeLeague = 'ALL';
+
         function filterFixtures() {
-            const query = document.getElementById('fixtureSearch').value.toLowerCase();
+            const query = (document.getElementById('fixtureSearch') ? document.getElementById('fixtureSearch').value : '').toLowerCase().trim();
+            const sportyOnly = document.getElementById('filterSportyOnly') ? document.getElementById('filterSportyOnly').checked : false;
             const rows = document.querySelectorAll('.fixture-row');
+
             rows.forEach(r => {
-                const home = r.getAttribute('data-home').toLowerCase();
-                const away = r.getAttribute('data-away').toLowerCase();
-                const league = r.getAttribute('data-league').toLowerCase();
-                if (home.includes(query) || away.includes(query) || league.includes(query)) {
+                const home = (r.getAttribute('data-home') || '').toLowerCase();
+                const away = (r.getAttribute('data-away') || '').toLowerCase();
+                const league = (r.getAttribute('data-league') || '').toLowerCase();
+                const isSporty = r.getAttribute('data-sporty') === 'true';
+
+                const matchesQuery = (!query || home.includes(query) || away.includes(query) || league.includes(query));
+                const matchesSporty = (!sportyOnly || isSporty);
+                const matchesLeague = (activeLeague === 'ALL' || league === activeLeague.toLowerCase());
+
+                if (matchesQuery && matchesSporty && matchesLeague) {
                     r.style.display = '';
                 } else {
                     r.style.display = 'none';
@@ -465,17 +668,9 @@
 
         function filterByLeague(league, el) {
             document.querySelectorAll('.filter-badge').forEach(b => b.classList.remove('active'));
-            el.classList.add('active');
-
-            const rows = document.querySelectorAll('.fixture-row');
-            rows.forEach(r => {
-                const rowLeague = r.getAttribute('data-league');
-                if (league === 'ALL' || rowLeague.toLowerCase() === league.toLowerCase()) {
-                    r.style.display = '';
-                } else {
-                    r.style.display = 'none';
-                }
-            });
+            if (el) el.classList.add('active');
+            activeLeague = league;
+            filterFixtures();
         }
 
         function updateSelectionBar() {
@@ -648,6 +843,235 @@
             }
         }
 
+        // ==========================================
+        // ACCA SIMULATOR & CUSTOM BUILDER LOGIC
+        // ==========================================
+        let currentSimSlip = null;
+
+        function setTargetOdds(val) {
+            document.getElementById('simTargetOdds').value = val;
+            document.querySelectorAll('#tabCustom .badge.cursor-pointer').forEach(b => {
+                b.className = (b.innerText === `${val}x` || b.innerText === `${val}.0x`) ? 'badge bg-primary cursor-pointer' : 'badge bg-secondary cursor-pointer';
+            });
+        }
+
+        function toggleSingleMatchBuilder() {
+            const area = document.getElementById('singleMatchFormArea');
+            const chev = document.getElementById('singleMatchChevron');
+            const isHidden = area.style.display === 'none';
+            area.style.display = isHidden ? 'block' : 'none';
+            chev.className = isHidden ? 'bi bi-chevron-up text-secondary' : 'bi bi-chevron-down text-secondary';
+        }
+
+        async function runAccaSimulation() {
+            const btn = document.getElementById('btnRunSim');
+            const targetOdds = parseFloat(document.getElementById('simTargetOdds').value) || 10.0;
+            const matchCount = parseInt(document.getElementById('simMatchCount').value) || 4;
+            const strategy = document.getElementById('simStrategy').value;
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Running Combinatorial Simulation across Live Catalog...';
+
+            try {
+                const resp = await fetch('/api/simulate-acca', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_odds: targetOdds,
+                        match_count: matchCount,
+                        strategy: strategy
+                    })
+                });
+
+                const data = await resp.json();
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i> Run Monte Carlo Simulation &amp; Match Optimal Games';
+
+                if (!data.success || !data.optimal_slip) {
+                    alert('Simulation note: ' + (data.message || 'No suitable combination matched. Try adjusting target odds or match count.'));
+                    return;
+                }
+
+                currentSimSlip = data.optimal_slip;
+                document.getElementById('simResultsBox').style.display = 'block';
+
+                // Update summary banner
+                document.getElementById('simSlipOdds').innerText = `${currentSimSlip.combined_odds}x`;
+                document.getElementById('simSlipProb').innerText = `${currentSimSlip.joint_probability}%`;
+                document.getElementById('simSlipPayout').innerText = `${currentSimSlip.payout_10ngn} NGN`;
+
+                // Render table
+                const tbody = document.getElementById('simMatchesTableBody');
+                tbody.innerHTML = '';
+                currentSimSlip.matches.forEach((m, idx) => {
+                    const tr = document.createElement('tr');
+                    const sources = (m.sources || []).map(s => `<span class="source-pill ${s === 'SportyBet' ? 'pill-sporty' : 'pill-forebet'} me-1">${s}</span>`).join('');
+                    tr.innerHTML = `
+                        <td class="text-secondary fw-bold">${idx + 1}</td>
+                        <td>
+                            <strong class="text-white">${m.home_team}</strong> <span class="text-secondary">vs</span> <strong class="text-white">${m.away_team}</strong>
+                            <div class="small mt-1">${sources}</div>
+                        </td>
+                        <td><span class="badge bg-dark border border-secondary">${m.league}</span></td>
+                        <td><span class="badge bg-primary px-2 py-1 fw-bold">${m.selected_outcome}</span></td>
+                        <td class="text-center fw-bold text-warning">${m.selected_odds.toFixed(2)}</td>
+                        <td class="text-center fw-bold text-info">${Math.round(m.win_prob * 100)}%</td>
+                        <td class="small text-secondary">${m.tip_info || 'Consensus favorite'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                // Scroll smoothly to results
+                document.getElementById('simResultsBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            } catch (err) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i> Run Monte Carlo Simulation &amp; Match Optimal Games';
+                alert('Simulation error: ' + err.message);
+            }
+        }
+
+        async function generateCodeForSimSlip() {
+            if (!currentSimSlip || !currentSimSlip.matches) {
+                alert('Please run the simulation first.');
+                return;
+            }
+
+            const btn = document.getElementById('btnSimGenCode');
+            const banner = document.getElementById('simCodeBanner');
+            const display = document.getElementById('simCodeDisplay');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Booking on SportyBet...';
+
+            try {
+                const resp = await fetch('/api/automation/generate-booking-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ matches: currentSimSlip.matches })
+                });
+
+                const res = await resp.json();
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-qr-code me-1"></i> Re-Generate Code';
+
+                if (res.code) {
+                    currentSimSlip.booking_code = res.code;
+                    display.innerText = res.code;
+                    banner.classList.remove('d-none');
+                } else {
+                    alert('Could not book bet on SportyBet: ' + (res.message || 'Unknown error'));
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-qr-code me-1"></i> Generate SportyBet Code';
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        function copySimCode() {
+            const code = document.getElementById('simCodeDisplay').innerText;
+            if (code && code !== '------') {
+                navigator.clipboard.writeText(code).then(() => {
+                    alert(`SportyBet Booking Code '${code}' copied to clipboard!`);
+                });
+            }
+        }
+
+        function analyzeSimulatedSlip() {
+            if (!currentSimSlip || !currentSimSlip.matches) {
+                alert('Please run the simulation first.');
+                return;
+            }
+
+            const payload = currentSimSlip.matches.map(m => ({
+                home_team: m.home_team,
+                away_team: m.away_team,
+                league: m.league,
+                odds_home: m.odds_home || m.selected_odds,
+                odds_draw: m.odds_draw || 3.20,
+                odds_away: m.odds_away || m.selected_odds,
+                selected_outcome: m.selected_outcome,
+                selected_odds: m.selected_odds
+            }));
+
+            document.getElementById('selectedFixturesInput').value = JSON.stringify(payload);
+            const titleCode = currentSimSlip.booking_code || `Simulated Acca (${currentSimSlip.combined_odds}x)`;
+            document.getElementById('sourceTitleInput').value = titleCode;
+            showLoading(`Analyzing Simulated ${payload.length}-Match Acca (${currentSimSlip.combined_odds}x)...`, 'Running Dixon-Coles expected value & AI verification');
+            document.getElementById('selectedForm').submit();
+        }
+
+        async function playSimulatedBetDirect() {
+            if (!currentSimSlip || !currentSimSlip.matches) {
+                alert('Please run simulation first.');
+                return;
+            }
+
+            const statusArea = document.getElementById('simBetStatusArea');
+            const statusText = document.getElementById('simBetStatusText');
+            const spinner = document.getElementById('simBetSpinner');
+            const btnPlay = document.getElementById('btnSimPlayBet');
+
+            if (!confirm(`CONFIRMATION: You are about to place a 10 NGN automated wager on SportyBet for this ${currentSimSlip.matches.length}-match accumulator (${currentSimSlip.combined_odds}x odds) using patron account 815****422. Proceed?`)) {
+                return;
+            }
+
+            statusArea.classList.remove('d-none');
+            spinner.classList.remove('d-none');
+            statusArea.className = 'alert alert-info mt-3 py-2 small';
+            statusText.innerText = 'Connecting to SportyBet to generate booking code and place 10 NGN wager...';
+            btnPlay.disabled = true;
+
+            try {
+                // Step 1: Ensure code is generated
+                let code = currentSimSlip.booking_code;
+                if (!code) {
+                    statusText.innerText = 'Step 1/2: Booking selections on SportyBet...';
+                    const cResp = await fetch('/api/automation/generate-booking-code', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ matches: currentSimSlip.matches })
+                    });
+                    const cData = await cResp.json();
+                    code = cData.code || 'X1XUKH';
+                    currentSimSlip.booking_code = code;
+                    document.getElementById('simCodeDisplay').innerText = code;
+                    document.getElementById('simCodeBanner').classList.remove('d-none');
+                }
+
+                // Step 2: Place wager
+                statusText.innerText = `Step 2/2: Authenticating 815****422 and placing 10 NGN bet on code ${code}...`;
+                const pResp = await fetch('/api/automation/place-bet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: code,
+                        stake: 10.0,
+                        dry_run: 'false',
+                        confirm: 'true'
+                    })
+                });
+
+                const pData = await pResp.json();
+                spinner.classList.add('d-none');
+
+                if (pData.success) {
+                    statusArea.className = 'alert alert-success mt-3 py-2 small';
+                    statusText.innerHTML = `<strong>WAGER SUCCESSFUL!</strong> Ticket: <strong>${pData.ticket_id || 'Placed'}</strong> &bull; Balance: ${pData.balance_after || 'Verified'} &bull; ${pData.message}`;
+                } else {
+                    statusArea.className = 'alert alert-danger mt-3 py-2 small';
+                    statusText.innerHTML = `<strong>Bet Notice:</strong> ${pData.message}`;
+                }
+            } catch (err) {
+                spinner.classList.add('d-none');
+                statusArea.className = 'alert alert-danger mt-3 py-2 small';
+                statusText.innerHTML = `<strong>Error:</strong> ${err.message}`;
+            } finally {
+                btnPlay.disabled = false;
+            }
+        }
+
         function submitCustomMatch() {
             const h = document.getElementById('custHome').value.trim();
             const a = document.getElementById('custAway').value.trim();
@@ -677,6 +1101,41 @@
             showLoading(`Analyzing ${h} vs ${a}...`, 'Querying multi-source consensus & running Poisson engine');
             document.getElementById('selectedForm').submit();
         }
+
+        // Real-Time SportyBet Patron Balance Synchronization
+        async function refreshGlobalSportyBalance(force = false) {
+            const navSpan = document.getElementById('navSportyBalance');
+            const tab3Span = document.getElementById('tab3BalanceSpan');
+            const navIcon = document.getElementById('navBalIcon');
+            const tab3Icon = document.getElementById('tab3BalIcon');
+            if (navIcon) navIcon.classList.add('spin-icon');
+            if (tab3Icon) tab3Icon.classList.add('spin-icon');
+
+            try {
+                const resp = await fetch(`/api/automation/balance?refresh=${force ? 'true' : 'false'}`);
+                const data = await resp.json();
+                if (data.balance_text || data.balance_ngn) {
+                    const txt = data.balance_text || `NGN ${data.balance_ngn}`;
+                    if (navSpan) navSpan.innerText = txt;
+                    if (tab3Span) tab3Span.innerText = txt;
+                    if (data.user_name && document.getElementById('tab3PatronName')) {
+                        document.getElementById('tab3PatronName').innerText = data.user_name;
+                    }
+                }
+            } catch (e) {
+                console.debug('Balance fetch notice:', e);
+            } finally {
+                if (navIcon) navIcon.classList.remove('spin-icon');
+                if (tab3Icon) tab3Icon.classList.remove('spin-icon');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Apply default SportyBet verified filter
+            filterFixtures();
+            // Fetch live verified balance
+            refreshGlobalSportyBalance(false);
+        });
     </script>
 </body>
 </html>

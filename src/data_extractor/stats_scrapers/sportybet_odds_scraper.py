@@ -38,7 +38,7 @@ class SportyBetOddsScraper:
     """
 
     SPORTY_FOOTBALL_URL = "https://www.sportybet.com/ng/sport/football"
-    API_PREMATCH_URL = "https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&timeline=24"
+    UPCOMING_EVENTS_BASE = "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C26%2C36%2C14%2C60100&pageSize=100&option=1"
 
     def __init__(self, headless: bool = True, timeout: int = 40000):
         self.headless = headless
@@ -154,63 +154,136 @@ class SportyBetOddsScraper:
             except Exception as e:
                 logger.warning(f"Error scraping SportyBet DOM: {e}")
 
-        # 2. Fast API supplement/fallback if DOM returned few matches
-        if len(fixtures) < 15:
-            try:
-                api_fixtures = self._scrape_via_api()
-                existing_keys = {f"{f.home_team.lower()}_vs_{f.away_team.lower()}" for f in fixtures}
-                for af in api_fixtures:
-                    k = f"{af.home_team.lower()}_vs_{af.away_team.lower()}"
-                    if k not in existing_keys:
-                        fixtures.append(af)
-                        existing_keys.add(k)
-                logger.info(f"Total fixtures after SportyBet API supplement: {len(fixtures)}")
-            except Exception as e:
-                logger.debug(f"SportyBet API supplement failed: {e}")
+        # 2. Comprehensive API supplement (fetches 500+ matches across upcoming & live tournaments)
+        try:
+            api_fixtures = self._scrape_via_api()
+            existing_keys = {f"{f.home_team.lower()}_vs_{f.away_team.lower()}" for f in fixtures}
+            for af in api_fixtures:
+                k = f"{af.home_team.lower()}_vs_{af.away_team.lower()}"
+                if k not in existing_keys:
+                    fixtures.append(af)
+                    existing_keys.add(k)
+            logger.info(f"Total fixtures after SportyBet API supplement: {len(fixtures)}")
+        except Exception as e:
+            logger.debug(f"SportyBet API supplement failed: {e}")
 
         return fixtures
 
     def _scrape_via_api(self) -> List[SportyBetFixtureOdds]:
-        """HTTP API fallback for SportyBet live & prematch fixtures"""
+        """
+        High-scale SportyBet official API extraction.
+        Queries multiple pages of upcoming events and live prematch events,
+        yielding 500+ real 1X2 bookmaker odds with exact event IDs.
+        """
+        import time
         results: List[SportyBetFixtureOdds] = []
-        req = urllib.request.Request(
-            self.API_PREMATCH_URL,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
+        seen_keys = set()
+        timestamp = int(time.time() * 1000)
 
-        for group in data.get("data", []):
-            league_name = group.get("categoryName") or group.get("tournamentName") or "Football"
-            for ev in group.get("events", []):
-                home = ev.get("homeTeamName")
-                away = ev.get("awayTeamName")
-                if not home or not away:
-                    continue
+        # 1. Fetch upcoming tournament events (pages 1 to 6, 100 events per page)
+        for page_num in range(1, 7):
+            try:
+                url = f"{self.UPCOMING_EVENTS_BASE}&pageNum={page_num}&_t={timestamp}"
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    data = json.loads(r.read().decode("utf-8"))
 
-                h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
-                for m in ev.get("markets", []):
-                    desc = m.get("desc", "").lower()
-                    if "1x2" in desc or m.get("id") == "1":
-                        for o in m.get("outcomes", []):
-                            d_desc = o.get("desc", "")
-                            val = float(o.get("odds", 0.0))
-                            if d_desc == "1" or "home" in d_desc.lower():
-                                h_odd = val
-                            elif d_desc == "X" or "draw" in d_desc.lower():
-                                d_odd = val
-                            elif d_desc == "2" or "away" in d_desc.lower():
-                                a_odd = val
+                tournaments = data.get("data", {}).get("tournaments", [])
+                if not tournaments:
+                    break
 
-                if h_odd > 1.0 and a_odd > 1.0:
-                    results.append(SportyBetFixtureOdds(
-                        home_team=home,
-                        away_team=away,
-                        league=league_name,
-                        odds_home=h_odd,
-                        odds_draw=d_odd,
-                        odds_away=a_odd,
-                        sporty_id=str(ev.get("eventId", ""))
-                    ))
+                for tourn in tournaments:
+                    league_name = tourn.get("name") or tourn.get("categoryName") or "Football"
+                    for ev in tourn.get("events", []):
+                        home = ev.get("homeTeamName")
+                        away = ev.get("awayTeamName")
+                        if not home or not away:
+                            continue
 
+                        pair_key = f"{home.lower()}_vs_{away.lower()}"
+                        if pair_key in seen_keys:
+                            continue
+
+                        h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
+                        for m in ev.get("markets", []):
+                            desc = m.get("desc", "").lower()
+                            if "1x2" in desc or m.get("id") == "1":
+                                for o in m.get("outcomes", []):
+                                    d_desc = o.get("desc", "").lower()
+                                    val = float(o.get("odds", 0.0))
+                                    if d_desc == "1" or "home" in d_desc:
+                                        h_odd = val
+                                    elif d_desc == "x" or "draw" in d_desc:
+                                        d_odd = val
+                                    elif d_desc == "2" or "away" in d_desc:
+                                        a_odd = val
+
+                        if h_odd > 1.0 and a_odd > 1.0:
+                            seen_keys.add(pair_key)
+                            results.append(SportyBetFixtureOdds(
+                                home_team=home,
+                                away_team=away,
+                                league=league_name,
+                                odds_home=h_odd,
+                                odds_draw=d_odd,
+                                odds_away=a_odd,
+                                sporty_id=str(ev.get("eventId", ""))
+                            ))
+            except Exception as e:
+                logger.debug(f"Error fetching SportyBet upcoming page {page_num}: {e}")
+                break
+
+        # 2. Also query live prematch events timeline=24 to ensure ongoing/in-play matches are captured
+        try:
+            live_url = f"https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&timeline=24&_t={timestamp}"
+            req = urllib.request.Request(
+                live_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode("utf-8"))
+
+            for group in data.get("data", []):
+                league_name = group.get("categoryName") or group.get("tournamentName") or "Football"
+                for ev in group.get("events", []):
+                    home = ev.get("homeTeamName")
+                    away = ev.get("awayTeamName")
+                    if not home or not away:
+                        continue
+                    pair_key = f"{home.lower()}_vs_{away.lower()}"
+                    if pair_key in seen_keys:
+                        continue
+
+                    h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
+                    for m in ev.get("markets", []):
+                        desc = m.get("desc", "").lower()
+                        if "1x2" in desc or m.get("id") == "1":
+                            for o in m.get("outcomes", []):
+                                d_desc = o.get("desc", "").lower()
+                                val = float(o.get("odds", 0.0))
+                                if d_desc == "1" or "home" in d_desc:
+                                    h_odd = val
+                                elif d_desc == "x" or "draw" in d_desc:
+                                    d_odd = val
+                                elif d_desc == "2" or "away" in d_desc:
+                                    a_odd = val
+
+                    if h_odd > 1.0 and a_odd > 1.0:
+                        seen_keys.add(pair_key)
+                        results.append(SportyBetFixtureOdds(
+                            home_team=home,
+                            away_team=away,
+                            league=league_name,
+                            odds_home=h_odd,
+                            odds_draw=d_odd,
+                            odds_away=a_odd,
+                            sporty_id=str(ev.get("eventId", ""))
+                        ))
+        except Exception as e:
+            logger.debug(f"Error fetching SportyBet live events timeline=24: {e}")
+
+        logger.info(f"SportyBet API extraction completed: {len(results)} total fixtures with true odds.")
         return results

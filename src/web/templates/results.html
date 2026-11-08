@@ -133,20 +133,16 @@
             border-color: #3b82f6;
         }
 
-        .parlay-dock {
-            position: fixed;
-            bottom: 20px;
-            right: 24px;
-            background: #1e293b;
-            border: 1px solid #10b981;
-            border-radius: 14px;
-            padding: 14px 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            z-index: 1040;
-            display: flex;
-            align-items: center;
-            gap: 16px;
+        /* SportyBet Automation Hub Card */
+        .card p-3 mb-4 rounded {
+            background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+            border: 1px solid #6366f1;
         }
+        .spin-icon {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -248,7 +244,7 @@
                         <h5 class="fw-bold mb-0 text-white"><i class="bi bi-robot text-info me-1"></i> SportyBet Auto-Bet Hub</h5>
                     </div>
                     <div class="small text-secondary mb-1">
-                        Patron Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success">NGN 100.93</strong> &bull; Stake: <strong class="text-warning">10.00 NGN</strong>
+                        Patron Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success" id="sportyBalanceSpan">NGN 90.93</strong> <button class="btn btn-outline-success btn-sm py-0 px-1 ms-1" style="font-size: 0.72rem; line-height: 1;" title="Refresh live balance from SportyBet" onclick="refreshSportyBalance(true)"><i class="bi bi-arrow-clockwise" id="balRefreshIcon"></i></button> &bull; Stake: <strong class="text-warning">10.00 NGN</strong>
                     </div>
                     <div class="small text-muted fst-italic">
                         <i class="bi bi-info-circle me-1"></i> Sequence: Load Betslip &bull; Verify Odds &bull; Auth 815****422 &bull; Place Wager
@@ -257,10 +253,14 @@
 
                 <div class="col-lg-3 col-12">
                     <label class="small text-secondary fw-bold text-uppercase mb-1">SportyBet Booking Code</label>
-                    <div class="input-group input-group-sm">
+                    <div class="input-group input-group-sm mb-1">
                         <span class="input-group-text bg-dark border-secondary text-info"><i class="bi bi-ticket-perforated"></i></span>
                         <input type="text" id="autoBookingCode" class="form-control bg-dark border-secondary text-white text-uppercase fw-bold" placeholder="e.g. X1XUKH, LEA2BS" value="{% if result.code|length <= 10 and not ' ' in result.code %}{{ result.code }}{% endif %}">
+                        <button class="btn btn-outline-secondary" type="button" title="Copy Code" onclick="copyBookingCode()"><i class="bi bi-clipboard"></i></button>
                     </div>
+                    <button class="btn btn-warning btn-sm fw-bold w-100 py-1" id="btnGenCode" onclick="generateSportyCodeNow()" style="font-size: 0.78rem;">
+                        <i class="bi bi-qr-code me-1"></i> Generate SportyBet Code
+                    </button>
                 </div>
 
                 <div class="col-lg-4 col-12 d-flex gap-2 align-items-end justify-content-lg-end flex-wrap">
@@ -297,6 +297,7 @@
                  data-conf="{{ conf }}"
                  data-home="{{ match.home_team }}"
                  data-away="{{ match.away_team }}"
+                 data-outcome="{{ match.selected_outcome or 'Home' }}"
                  data-odds="{{ match.selected_odds or match.odds_home or 2.0 }}">
                 
                 <!-- Match Top Bar -->
@@ -670,6 +671,95 @@
             });
         }
 
+        // SportyBet Live Balance Fetching
+        async function refreshSportyBalance(force = true) {
+            const span = document.getElementById('sportyBalanceSpan');
+            const icon = document.getElementById('balRefreshIcon');
+            if (icon) icon.classList.add('spin-icon');
+            if (!span) return;
+
+            try {
+                const resp = await fetch(`/api/automation/balance?refresh=${force ? 'true' : 'false'}`);
+                const data = await resp.json();
+                if (data.success || data.balance_text) {
+                    span.innerText = data.balance_text || `NGN ${data.balance_ngn}`;
+                    span.title = `Last verified: ${new Date().toLocaleTimeString()}`;
+                }
+            } catch (err) {
+                console.debug('Balance fetch error:', err);
+            } finally {
+                if (icon) icon.classList.remove('spin-icon');
+            }
+        }
+
+        // Copy Booking Code
+        function copyBookingCode() {
+            const code = document.getElementById('autoBookingCode').value.trim();
+            if (code) {
+                navigator.clipboard.writeText(code).then(() => {
+                    alert(`SportyBet Booking Code '${code}' copied to clipboard!`);
+                });
+            } else {
+                alert('No booking code to copy. Click "Generate SportyBet Code" first.');
+            }
+        }
+
+        // Generate Booking Code on Demand for Analyzed Games
+        async function generateSportyCodeNow() {
+            const btn = document.getElementById('btnGenCode');
+            const codeInput = document.getElementById('autoBookingCode');
+            const statusArea = document.getElementById('automationStatusArea');
+            const statusBox = document.getElementById('automationStatusBox');
+            const statusText = document.getElementById('automationStatusText');
+            const spinner = document.getElementById('automationSpinner');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Booking on SportyBet...';
+
+            statusArea.classList.remove('d-none');
+            spinner.classList.remove('d-none');
+            statusBox.className = "alert alert-warning mb-0 py-2 small d-flex align-items-center gap-2";
+            statusText.innerText = "Connecting to SportyBet to build betslip and extract fresh booking code...";
+
+            try {
+                const matchesPayload = [];
+                document.querySelectorAll('.match-card').forEach(c => {
+                    matchesPayload.push({
+                        home_team: c.getAttribute('data-home'),
+                        away_team: c.getAttribute('data-away'),
+                        selected_outcome: c.getAttribute('data-outcome') || 'Home'
+                    });
+                });
+
+                const resp = await fetch('/api/automation/generate-booking-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ matches: matchesPayload, session_id: '{{ session_id }}' })
+                });
+                const res = await resp.json();
+                spinner.classList.add('d-none');
+
+                if (res.code) {
+                    codeInput.value = res.code;
+                    statusBox.className = "alert alert-success mb-0 py-2 small";
+                    statusText.innerHTML = `<strong>BOOKING CODE READY:</strong> <span class="badge bg-dark fs-6 px-3 py-1 text-warning">${res.code}</span> (Valid for betting on SportyBet)`;
+                    btn.innerHTML = `<i class="bi bi-check2-circle text-success me-1"></i> Code: ${res.code}`;
+                    btn.className = "btn btn-outline-success btn-sm fw-bold w-100 py-1";
+                } else {
+                    statusBox.className = "alert alert-danger mb-0 py-2 small";
+                    statusText.innerText = "Notice: " + (res.message || "Could not generate code");
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retry Generation';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                spinner.classList.add('d-none');
+                statusBox.className = "alert alert-danger mb-0 py-2 small";
+                statusText.innerText = "Generation error: " + e.message;
+                btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retry Generation';
+                btn.disabled = false;
+            }
+        }
+
         // SportyBet Automation Execution
         async function triggerSportyAutomation(isDryRun) {
             const statusArea = document.getElementById('automationStatusArea');
@@ -682,7 +772,7 @@
 
             const code = codeInput ? codeInput.value.trim().toUpperCase() : "";
             if (!code || code.length < 4 || code.length > 10 || code.includes(" ")) {
-                alert("Please enter a valid SportyBet booking code (e.g. X1XUKH, LEA2BS) to load the betslip.");
+                alert("Please click 'Generate SportyBet Code' or enter a valid booking code (e.g. X1XUKH) to load the betslip.");
                 if (codeInput) codeInput.focus();
                 return;
             }
@@ -725,8 +815,10 @@
                     if (isDryRun) {
                         statusText.innerHTML = `<strong>VALIDATION SUCCESS:</strong> ${res.message} (Stake: ${res.stake} NGN, Potential Win: ${res.potential_win || '--'} NGN)`;
                     } else {
-                        statusText.innerHTML = `<strong>WAGER PLACED:</strong> Ticket ID: <strong>${res.ticket_id || 'Confirmed'}</strong> &bull; Balance: ${res.balance_after || '100.93 NGN'} &bull; ${res.message}`;
+                        statusText.innerHTML = `<strong>WAGER PLACED:</strong> Ticket ID: <strong>${res.ticket_id || 'Confirmed'}</strong> &bull; Balance: ${res.balance_after || 'NGN 90.93'} &bull; ${res.message}`;
                     }
+                    // Refresh balance immediately
+                    setTimeout(() => refreshSportyBalance(true), 1500);
                 } else {
                     statusBox.className = "alert alert-danger mb-0 py-2 small";
                     statusText.innerHTML = `<strong>EXECUTION NOTICE:</strong> ${res.message}`;
@@ -740,6 +832,21 @@
                 btnLive.disabled = false;
             }
         }
+
+        // On page load, fetch live balance and auto-generate booking code for analyzed games
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshSportyBalance(false);
+
+            // Auto-generate booking code for analyzed matches if not already loaded from a booking code workflow
+            const codeInput = document.getElementById('autoBookingCode');
+            const matchCards = document.querySelectorAll('.match-card');
+            if (codeInput && !codeInput.value.trim() && matchCards.length > 0) {
+                // Auto-generate in background so user has the code ready immediately
+                setTimeout(() => {
+                    generateSportyCodeNow();
+                }, 800);
+            }
+        });
     </script>
 </body>
 </html>

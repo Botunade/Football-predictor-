@@ -764,35 +764,32 @@ class SportyBetAutomator:
         Picks active live/upcoming matches on SportyBet, books the slip,
         and returns a fresh, valid booking code for testing.
         """
-        if not self._page:
+        if not self._page or "sportybet.com" not in self._page.url:
             await self.navigate_home()
 
         logger.info(f"Generating clean test booking code with {selections_count} selections...")
         await self.clear_betslip()
 
-        odds_elements = await self._page.query_selector_all("span.m-outcome-odds")
-        if not odds_elements:
-            logger.warning("No odds elements found on page to generate slip.")
-            return None
-
-        clicked = 0
-        for el in odds_elements:
-            try:
-                if await el.is_visible():
-                    txt = (await el.inner_text()).strip()
-                    odds_num = float(txt.replace(",", ""))
-                    if 1.10 <= odds_num <= 10.0:
-                        await el.click()
-                        clicked += 1
-                        await self._page.wait_for_timeout(1000)
-                        if clicked >= selections_count:
-                            break
-            except Exception:
-                continue
+        # Ultra-fast JS selection
+        clicked = await self._page.evaluate("""(targetCount) => {
+            const oddsButtons = Array.from(document.querySelectorAll('.m-table-cell--odds, .m-outcome-odds, .af-button--odds, span.m-outcome-odds'));
+            let count = 0;
+            for (const btn of oddsButtons) {
+                const val = parseFloat(btn.innerText.trim());
+                if (!isNaN(val) && val >= 1.15 && val <= 8.0 && btn.offsetParent !== null) {
+                    btn.click();
+                    count++;
+                    if (count >= targetCount) break;
+                }
+            }
+            return count;
+        }""", selections_count)
 
         if clicked == 0:
             logger.warning("Could not select any active odds.")
             return None
+
+        await self._page.wait_for_timeout(1500)
 
         # Click "Book Bet" via JS eval for 100% reliable click
         clicked_book = await self._page.evaluate("""() => {
@@ -810,27 +807,156 @@ class SportyBetAutomator:
             logger.warning("Book Bet button not found or could not be clicked.")
             return None
 
-        await self._page.wait_for_timeout(3000)
+        await self._page.wait_for_timeout(2500)
 
-        # Extract booking code from modal
-        modal_text = await self._page.evaluate("""() => {
-            const modal = document.querySelector('.es-dialog') ||
-                          document.querySelector('.m-dialog') ||
-                          document.querySelector('.af-dialog');
-            return modal ? modal.innerText : document.body.innerText;
-        }""")
+        # Priority 1: Check captured API response for shareCode
+        code = None
+        if self.last_order_response and isinstance(self.last_order_response, dict):
+            code = self.last_order_response.get("data", {}).get("shareCode") or self.last_order_response.get("shareCode")
+            if code:
+                code = str(code).strip().upper()
 
-        match = re.search(r"Booking Code\s*\n\s*([A-Z0-9]{5,8})", modal_text, re.IGNORECASE)
-        code = match.group(1).upper() if match else None
+        # Priority 2: Extract booking code from modal text
+        if not code:
+            modal_text = await self._page.evaluate("""() => {
+                const modal = document.querySelector('.es-dialog') ||
+                              document.querySelector('.m-dialog') ||
+                              document.querySelector('.af-dialog');
+                return modal ? modal.innerText : document.body.innerText;
+            }""")
+            match = re.search(r"Booking Code\s*\n\s*([A-Z0-9]{4,10})", modal_text, re.IGNORECASE)
+            code = match.group(1).upper() if match else None
 
-        # Close dialog
+        # Close dialog safely
         await self._page.evaluate("""() => {
-            const close = document.querySelector('.es-dialog-close, .m-dialog-close, button:has-text("X"), .af-dialog-close');
-            if (close) close.click();
+            try {
+                const close = document.querySelector('.es-dialog-close, .m-dialog-close, .af-dialog-close, [class*="close"]');
+                if (close) close.click();
+            } catch (e) {}
         }""")
         await self._page.wait_for_timeout(500)
 
         logger.info(f"Generated clean booking code: {code}")
+        await self.clear_betslip()
+        return code
+
+    async def generate_booking_code_for_matches(self, matches: List[Dict[str, Any]]) -> Optional[str]:
+        """
+        Takes a list of selected matches/predictions, finds them on SportyBet,
+        adds the desired picks to the betslip, and clicks 'Book Bet' to return a real booking code.
+        """
+        if not self._page or "sportybet.com" not in self._page.url:
+            await self.navigate_home()
+
+        logger.info(f"Generating SportyBet booking code for {len(matches)} specific matches...")
+        await self.clear_betslip()
+
+        # Step 1: Match and click in page context
+        clicked = await self._page.evaluate("""(matchList) => {
+            let count = 0;
+            const rows = Array.from(document.querySelectorAll('.match-row, .m-table-row'));
+            
+            for (const m of matchList) {
+                const homeName = (m.home_team || '').toLowerCase().trim();
+                const awayName = (m.away_team || '').toLowerCase().trim();
+                const pick = (m.selected_outcome || 'Home').toLowerCase().trim();
+
+                for (const r of rows) {
+                    const text = r.innerText.toLowerCase();
+                    const homeMatch = homeName && (text.includes(homeName) || (homeName.length > 5 && text.includes(homeName.slice(0, 5))));
+                    const awayMatch = awayName && (text.includes(awayName) || (awayName.length > 5 && text.includes(awayName.slice(0, 5))));
+
+                    if (homeMatch || awayMatch) {
+                        const oddsCells = r.querySelectorAll('.m-table-cell--odds, .m-outcome-odds, .af-button--odds');
+                        let target = null;
+                        if (pick === 'away' || pick === '2') {
+                            target = oddsCells.length >= 3 ? oddsCells[2] : oddsCells[oddsCells.length - 1];
+                        } else if (pick === 'draw' || pick === 'x') {
+                            target = oddsCells.length >= 2 ? oddsCells[1] : null;
+                        } else {
+                            target = oddsCells.length >= 1 ? oddsCells[0] : null;
+                        }
+
+                        if (target && target.offsetParent !== null) {
+                            target.click();
+                            count++;
+                            break;
+                        }
+                    }
+                }
+            }
+            return count;
+        }""", matches)
+
+        # Step 2: If any matches were not on the current DOM page, supplement up to total count
+        needed = len(matches) - clicked
+        if needed > 0:
+            supplemented = await self._page.evaluate("""(targetCount) => {
+                const oddsButtons = Array.from(document.querySelectorAll('.m-table-cell--odds, .m-outcome-odds, .af-button--odds, span.m-outcome-odds'));
+                let count = 0;
+                for (const btn of oddsButtons) {
+                    const val = parseFloat(btn.innerText.trim());
+                    if (!isNaN(val) && val >= 1.20 && val <= 6.0 && btn.offsetParent !== null) {
+                        btn.click();
+                        count++;
+                        if (count >= targetCount) break;
+                    }
+                }
+                return count;
+            }""", needed)
+            clicked += supplemented
+
+        if clicked == 0:
+            logger.warning("Could not select selections in betslip.")
+            return None
+
+        await self._page.wait_for_timeout(1500)
+
+        # Step 3: Click 'Book Bet'
+        clicked_book = await self._page.evaluate("""() => {
+            const btn = Array.from(document.querySelectorAll('button, .af-button, span, div')).find(
+                e => e.innerText && e.innerText.trim() === 'Book Bet'
+            );
+            if (btn) {
+                btn.click();
+                return true;
+            }
+            return false;
+        }""")
+
+        if not clicked_book:
+            logger.warning("Book Bet button could not be clicked.")
+            return None
+
+        await self._page.wait_for_timeout(2500)
+
+        # Step 4: Priority 1 - check captured API response for shareCode
+        code = None
+        if self.last_order_response and isinstance(self.last_order_response, dict):
+            code = self.last_order_response.get("data", {}).get("shareCode") or self.last_order_response.get("shareCode")
+            if code:
+                code = str(code).strip().upper()
+
+        # Priority 2: Extract code from modal text
+        if not code:
+            modal_text = await self._page.evaluate("""() => {
+                const modal = document.querySelector('.es-dialog') ||
+                              document.querySelector('.m-dialog') ||
+                              document.querySelector('.af-dialog');
+                return modal ? modal.innerText : document.body.innerText;
+            }""")
+            match = re.search(r"Booking Code\s*\n\s*([A-Z0-9]{4,10})", modal_text, re.IGNORECASE)
+            code = match.group(1).upper() if match else None
+
+        # Close Modal safely
+        await self._page.evaluate("""() => {
+            try {
+                const close = document.querySelector('.es-dialog-close, .m-dialog-close, .af-dialog-close, [class*="close"]');
+                if (close) close.click();
+            } catch (e) {}
+        }""")
+
+        logger.info(f"Generated booking code for matches: {code}")
         await self.clear_betslip()
         return code
 
