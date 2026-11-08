@@ -171,8 +171,11 @@ async def api_place_bet(request: Request):
                 data = {}
 
         code = str(data.get("code", "")).strip().upper()
-        if not code:
-            return JSONResponse({"success": False, "message": "Booking code is required"}, status_code=400)
+        if not code or len(code) > 12 or " " in code:
+            return JSONResponse({
+                "success": False,
+                "message": f"Invalid SportyBet booking code format '{code}'. Please enter a valid SportyBet booking code (e.g. X1XUKH, LEA2BS) to generate the betslip."
+            }, status_code=400)
 
         stake = float(data.get("stake", 10.0))
         dry_run = str(data.get("dry_run", "true")).lower() in ["true", "1", "yes"]

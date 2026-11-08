@@ -46,7 +46,7 @@ class AIAnalyticalAgent:
         return self._is_active
 
     def _call_llm(self, prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.2) -> Optional[str]:
-        """Make an OpenAI-compatible completion request with stream=False"""
+        """Make an OpenAI-compatible completion request with stream=False and model fallback"""
         if not self._is_active:
             return None
 
@@ -61,27 +61,36 @@ class AIAnalyticalAgent:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": 800,
-            "stream": False
-        }
+        candidate_models = [self.model_name]
+        for fallback in ["gemini/gemini-3.5-flash-lite", "bzl/gemini-3.1-flash-lite-preview", "cf/@cf/meta/llama-3.1-8b-instruct-fp8-fast"]:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
 
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=40) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.warning(f"Error calling LLM at {url}: {e}")
-            return None
+        for model in candidate_models:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": 800,
+                "stream": False
+            }
+
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return data["choices"][0]["message"]["content"]
+            except Exception as e:
+                logger.debug(f"LLM model {model} attempt failed: {e}")
+                continue
+
+        logger.warning(f"All LLM candidate models failed or timed out at {url}")
+        return None
 
     def guide_match_search(self, target_home: str, target_away: str, candidates: List[str]) -> Optional[str]:
         """
