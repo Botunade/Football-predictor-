@@ -7,6 +7,7 @@ and the Playwright browser automator to safely execute wagers.
 import os
 import json
 import logging
+import time
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from dotenv import load_dotenv
