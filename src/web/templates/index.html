@@ -69,6 +69,7 @@
         .pill-outlook { background: #7c3aed; color: white; }
         .pill-scoregpt { background: #db2777; color: white; }
         .pill-betensured { background: #059669; color: white; }
+        .pill-sporty { background: #ef4444; color: white; font-weight: 800; letter-spacing: 0.5px; }
 
         .fixture-row {
             border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -251,7 +252,7 @@
                         </thead>
                         <tbody id="fixtureTableBody">
                             {% for f in scraped_fixtures %}
-                            <tr class="fixture-row" data-id="{{ f.id }}" data-league="{{ f.league }}" data-home="{{ f.home_team }}" data-away="{{ f.away_team }}">
+                            <tr class="fixture-row" data-id="{{ f.id }}" data-league="{{ f.league }}" data-home="{{ f.home_team }}" data-away="{{ f.away_team }}" data-rec="{{ f.recommended_outcome }}">
                                 <td class="text-center">
                                     <input type="checkbox" class="form-check-input fixture-checkbox" value="{{ f.id }}" onchange="updateSelectionBar()" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
                                 </td>
@@ -259,7 +260,8 @@
                                     <div class="fw-bold text-white fs-6">{{ f.home_team }} <span class="text-secondary fw-normal">vs</span> {{ f.away_team }}</div>
                                     <div class="small mt-1 d-flex gap-1 flex-wrap">
                                         {% for s in f.sources %}
-                                            {% if s == 'Forebet' %}<span class="source-pill pill-forebet">Forebet</span>
+                                            {% if s == 'SportyBet' %}<span class="source-pill pill-sporty"><i class="bi bi-broadcast me-1"></i>SportyBet Live</span>
+                                            {% elif s == 'Forebet' %}<span class="source-pill pill-forebet">Forebet</span>
                                             {% elif s == 'ScoreGPT' %}<span class="source-pill pill-scoregpt">ScoreGPT AI</span>
                                             {% elif s == 'Betensured' %}<span class="source-pill pill-betensured">Betensured</span>
                                             {% elif s == 'PredictZ' %}<span class="source-pill pill-predictz">PredictZ</span>
@@ -299,9 +301,9 @@
                                 </td>
                                 <td class="text-center">
                                     <select class="form-select form-select-sm bg-dark border-secondary text-white opt-pick" style="font-size: 0.8rem;">
-                                        <option value="Home">Home (1)</option>
-                                        <option value="Draw">Draw (X)</option>
-                                        <option value="Away">Away (2)</option>
+                                        <option value="Home" {% if f.recommended_outcome == 'Home' %}selected{% endif %}>Home (1)</option>
+                                        <option value="Draw" {% if f.recommended_outcome == 'Draw' %}selected{% endif %}>Draw (X)</option>
+                                        <option value="Away" {% if f.recommended_outcome == 'Away' %}selected{% endif %}>Away (2)</option>
                                     </select>
                                 </td>
                             </tr>
