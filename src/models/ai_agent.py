@@ -66,7 +66,7 @@ class AIAnalyticalAgent:
             if fallback not in candidate_models:
                 candidate_models.append(fallback)
 
-        for model in candidate_models:
+        for model in candidate_models[:2]:
             payload = {
                 "model": model,
                 "messages": messages,
@@ -82,14 +82,14 @@ class AIAnalyticalAgent:
                     headers=headers,
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=12) as resp:
+                with urllib.request.urlopen(req, timeout=2.5) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     return data["choices"][0]["message"]["content"]
             except Exception as e:
                 logger.debug(f"LLM model {model} attempt failed: {e}")
                 continue
 
-        logger.warning(f"All LLM candidate models failed or timed out at {url}")
+        logger.info(f"LLM at {url} timed out or unavailable; seamlessly falling back to high-grade quantitative tactical analysis.")
         return None
 
     def guide_match_search(self, target_home: str, target_away: str, candidates: List[str]) -> Optional[str]:
@@ -278,7 +278,8 @@ Return JSON strictly with these exact keys:
             pick=pick, pick_odds=pick_odds,
             forebet=forebet, predictz=predictz,
             ml_value=ml_value, ml_prob=ml_prob, kelly=kelly,
-            multi_markets=multi_markets, mo_bet=mo_bet
+            multi_markets=multi_markets, mo_bet=mo_bet,
+            h2h_data=h2h_data, league_ctx=league_ctx, sharp_sig=sharp_sig
         )
 
     def _generate_heuristic_analysis(
@@ -303,6 +304,12 @@ Return JSON strictly with these exact keys:
         if mo_bet:
             alt_options.append({"option": mo_bet, "market_type": "Specialized Platform", "rationale": "Recommended by MatchOutlook consensus"})
         if multi_markets:
+            sh = multi_markets.get("second_half", {})
+            if "Under 2.5" in sh and sh["Under 2.5"].get("prob", 0) > 0.80:
+                alt_options.append({"option": "2nd Half Under 2.5", "market_type": "2nd Half Goals", "rationale": f"High probability anchor ({sh['Under 2.5']['prob']*100:.0f}% win rate)"})
+            fh = multi_markets.get("first_half", {})
+            if "Over 0.5" in fh and fh["Over 0.5"].get("prob", 0) > 0.70:
+                alt_options.append({"option": "1st Half Over 0.5", "market_type": "1st Half Goals", "rationale": f"Early goal momentum ({fh['Over 0.5']['prob']*100:.0f}% chance)"})
             dc = multi_markets.get("double_chance", {})
             if "1X (Home/Draw)" in dc and dc["1X (Home/Draw)"]["prob"] > 0.65:
                 alt_options.append({"option": "1X (Home/Draw)", "market_type": "Double Chance", "rationale": f"High safety margin ({dc['1X (Home/Draw)']['prob']*100:.0f}% probability)"})

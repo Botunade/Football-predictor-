@@ -310,14 +310,17 @@
                                 </td>
                                 <td class="text-center">
                                     {% if 'SportyBet' in f.sources %}
-                                        <div class="badge bg-success-subtle text-success border border-success px-1 py-0 mb-1" style="font-size: 0.65rem;"><i class="bi bi-shield-check me-1"></i>SportyBet Real Odds</div>
+                                        <div class="badge bg-success-subtle text-success border border-success px-1 py-0 mb-1 odds-status-badge" style="font-size: 0.65rem;"><i class="bi bi-shield-check me-1"></i>SportyBet Real Odds</div>
                                     {% else %}
-                                        <div class="badge bg-secondary-subtle text-warning border border-warning px-1 py-0 mb-1" style="font-size: 0.65rem;"><i class="bi bi-exclamation-triangle me-1"></i>Estimated Odds</div>
+                                        <div class="d-flex align-items-center justify-content-center gap-1 mb-1">
+                                            <span class="badge bg-secondary-subtle text-warning border border-warning px-1 py-0 odds-status-badge" style="font-size: 0.65rem;"><i class="bi bi-exclamation-triangle me-1"></i>Estimated</span>
+                                            <button type="button" class="btn btn-outline-info py-0 px-1 btn-sync-odds" style="font-size: 0.62rem; line-height: 1.2;" onclick="syncRowSportyOdds(this)" title="Fetch live SportyBet odds for this fixture"><i class="bi bi-arrow-repeat"></i> Sync</button>
+                                        </div>
                                     {% endif %}
                                     <div class="d-flex justify-content-center gap-1">
-                                        <input type="number" step="0.01" class="odds-mini-input opt-h" value="{{ f.odds_home }}" title="Home Odds" placeholder="1">
-                                        <input type="number" step="0.01" class="odds-mini-input opt-d" value="{{ f.odds_draw }}" title="Draw Odds" placeholder="X">
-                                        <input type="number" step="0.01" class="odds-mini-input opt-a" value="{{ f.odds_away }}" title="Away Odds" placeholder="2">
+                                        <input type="number" step="0.01" class="odds-mini-input opt-h" value="{{ f.odds_home }}" title="Home Odds (Edit anytime)" placeholder="1" oninput="onMiniOddsInput(this)">
+                                        <input type="number" step="0.01" class="odds-mini-input opt-d" value="{{ f.odds_draw }}" title="Draw Odds (Edit anytime)" placeholder="X" oninput="onMiniOddsInput(this)">
+                                        <input type="number" step="0.01" class="odds-mini-input opt-a" value="{{ f.odds_away }}" title="Away Odds (Edit anytime)" placeholder="2" oninput="onMiniOddsInput(this)">
                                     </div>
                                 </td>
                                 <td class="text-center">
@@ -482,6 +485,19 @@
                             </div>
                         </div>
 
+                        <!-- Acca Quick Strategy Presets -->
+                        <div class="p-2 px-3 rounded mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2" style="background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255,255,255,0.08);">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="small text-info fw-bold text-uppercase" style="font-size: 0.72rem;"><i class="bi bi-magic me-1"></i>Quick Presets:</span>
+                                <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2 fw-bold" onclick="applyAccaPreset(3.0, 3, 'safe', 'max_prob')"><i class="bi bi-shield-check me-1"></i>Banker (3x)</button>
+                                <button type="button" class="btn btn-sm btn-outline-info py-0 px-2 fw-bold" onclick="applyAccaPreset(5.0, 4, 'safe', 'max_prob')"><i class="bi bi-stars me-1"></i>Solid (5x)</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold" onclick="applyAccaPreset(10.0, 5, 'all', 'max_prob')"><i class="bi bi-lightning-charge me-1"></i>Weekend 10x</button>
+                                <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-bold" onclick="applyAccaPreset(25.0, 6, 'all', 'max_ev')"><i class="bi bi-graph-up-arrow me-1"></i>Value 25x</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" onclick="applyAccaPreset(50.0, 8, 'all', 'max_ev')"><i class="bi bi-fire me-1"></i>Mega 50x</button>
+                            </div>
+                            <span class="small text-secondary" style="font-size: 0.72rem;">Dixon-Coles Joint Optimization</span>
+                        </div>
+
                         <!-- Parameter Controls -->
                         <div class="row g-3 mb-4">
                             <!-- Target Odds -->
@@ -528,6 +544,22 @@
                                     <span class="badge bg-secondary" style="cursor:pointer;" onclick="setSimStake(100)">100</span>
                                     <span class="badge bg-secondary" style="cursor:pointer;" onclick="setSimStake(500)">500</span>
                                     <span class="badge bg-secondary" style="cursor:pointer;" onclick="setSimStake(1000)">1,000</span>
+                                </div>
+                                <div class="mt-2 pt-1">
+                                    <span class="text-info small fw-bold" style="cursor: pointer; font-size: 0.72rem;" onclick="toggleSimKellySizer()">
+                                        <i class="bi bi-calculator me-1"></i>Kelly Sizer
+                                    </span>
+                                </div>
+                                <div id="simKellyArea" class="p-2 rounded bg-black border border-secondary mt-1" style="display: none; font-size: 0.72rem;">
+                                    <div class="small text-secondary mb-1">Bankroll (NGN):</div>
+                                    <div class="input-group input-group-sm mb-1">
+                                        <input type="number" id="simBankrollInput" class="form-control bg-dark border-secondary text-white" value="5000" min="100" step="500" oninput="recalcSimKelly()" style="font-size: 0.72rem;">
+                                        <button class="btn btn-outline-info" type="button" onclick="applySimKelly()">Use</button>
+                                    </div>
+                                    <div class="d-flex justify-content-between text-muted" style="font-size: 0.68rem;">
+                                        <span>Half-Kelly: <strong class="text-success" id="simKellyHalfVal">100 NGN</strong></span>
+                                        <span>Quarter: <strong class="text-info" id="simKellyQuarterVal">50 NGN</strong></span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -603,6 +635,12 @@
                                     <div class="small text-secondary">Generate SportyBet booking code or directly place <strong class="text-warning sim-stake-txt">10</strong> NGN wager using account 815****422</div>
                                 </div>
                                 <div class="d-flex gap-2 flex-wrap">
+                                    <button type="button" class="btn btn-outline-info fw-bold btn-sm px-3 py-2" id="btnSimShuffle" onclick="shuffleAccaSlip()" title="Find another winning combination matching the same odds">
+                                        <i class="bi bi-shuffle me-1"></i> Alternative Slip Variant (<span id="simVariantNum">1</span>)
+                                    </button>
+                                    <button type="button" class="btn btn-outline-light fw-bold btn-sm px-3 py-2" onclick="copySimSlipFormatted()" title="Copy slip for WhatsApp/Telegram sharing">
+                                        <i class="bi bi-share-fill me-1"></i> Share Slip
+                                    </button>
                                     <button type="button" class="btn btn-outline-warning fw-bold btn-sm px-3 py-2" id="btnSimGenCode" onclick="generateCodeForSimSlip()">
                                         <i class="bi bi-qr-code me-1"></i> Generate SportyBet Code
                                     </button>
@@ -808,6 +846,108 @@
             updateSelectionBar();
         }
 
+        // Handle User Mini-Odds Manual Edits and Real-Time Recommendation Synchronization
+        function onMiniOddsInput(inputEl) {
+            const row = inputEl.closest('.fixture-row');
+            if (!row) return;
+
+            const oh = parseFloat(row.querySelector('.opt-h').value) || 2.10;
+            const od = parseFloat(row.querySelector('.opt-d').value) || 3.20;
+            const oa = parseFloat(row.querySelector('.opt-a').value) || 3.10;
+
+            const sel = row.querySelector('.opt-pick');
+            if (sel) {
+                // Update 1X2 option odds
+                const optH = sel.querySelector('option[value="Home"]');
+                const optD = sel.querySelector('option[value="Draw"]');
+                const optA = sel.querySelector('option[value="Away"]');
+                if (optH) { optH.setAttribute('data-odds', oh.toFixed(2)); optH.innerText = `1X2: Home (${oh.toFixed(2)})`; }
+                if (optD) { optD.setAttribute('data-odds', od.toFixed(2)); optD.innerText = `1X2: Draw (${od.toFixed(2)})`; }
+                if (optA) { optA.setAttribute('data-odds', oa.toFixed(2)); optA.innerText = `1X2: Away (${oa.toFixed(2)})`; }
+
+                // Auto-adjust recommendation if odds clearly favor one side
+                let newRec = "Home";
+                let recOdds = oh;
+                if (oa <= 1.85) {
+                    newRec = "Away";
+                    recOdds = oa;
+                } else if (oh <= 1.85) {
+                    newRec = "Home";
+                    recOdds = oh;
+                } else if (oa < oh && oa <= 2.20) {
+                    newRec = "X2";
+                    recOdds = Math.round(1.0 / (1.0/od + 1.0/oa) * 92) / 100;
+                } else if (oh < oa && oh <= 2.20) {
+                    newRec = "1X";
+                    recOdds = Math.round(1.0 / (1.0/oh + 1.0/od) * 92) / 100;
+                } else {
+                    newRec = (oh <= oa) ? "1X" : "X2";
+                    recOdds = 1.35;
+                }
+
+                // Update select if not already manually altered
+                if (sel.value === "Home" || sel.value === "Away" || sel.value === "1X" || sel.value === "X2") {
+                    sel.value = newRec;
+                }
+
+                // Update badge text
+                const recBadge = row.querySelector('.badge.text-info');
+                if (recBadge) {
+                    recBadge.innerHTML = `<i class="bi bi-stars me-1"></i>Rec: ${newRec} (@${recOdds.toFixed(2)})`;
+                }
+            }
+        }
+
+        // On-demand Live SportyBet Odds Sync for a specific fixture row
+        async function syncRowSportyOdds(btnEl) {
+            const row = btnEl.closest('.fixture-row');
+            if (!row) return;
+
+            const home = row.getAttribute('data-home');
+            const away = row.getAttribute('data-away');
+            const icon = btnEl.querySelector('i');
+            if (icon) icon.className = 'bi bi-arrow-repeat spin-icon';
+            btnEl.disabled = true;
+
+            try {
+                const resp = await fetch(`/api/sportybet/sync-odds?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`);
+                const data = await resp.json();
+
+                if (data.status === 'success' && data.found) {
+                    const ohInput = row.querySelector('.opt-h');
+                    const odInput = row.querySelector('.opt-d');
+                    const oaInput = row.querySelector('.opt-a');
+
+                    if (ohInput) ohInput.value = data.odds_home.toFixed(2);
+                    if (odInput) odInput.value = data.odds_draw.toFixed(2);
+                    if (oaInput) oaInput.value = data.odds_away.toFixed(2);
+
+                    row.setAttribute('data-sporty', 'true');
+                    if (data.sporty_id) row.setAttribute('data-sporty-id', data.sporty_id);
+
+                    // Replace badge with verified badge
+                    const badgeContainer = btnEl.parentElement;
+                    if (badgeContainer) {
+                        badgeContainer.innerHTML = `<div class="badge bg-success-subtle text-success border border-success px-1 py-0 mb-1 odds-status-badge" style="font-size: 0.65rem;"><i class="bi bi-shield-check me-1"></i>SportyBet Real Odds</div>`;
+                    }
+
+                    if (ohInput) onMiniOddsInput(ohInput);
+                } else {
+                    btnEl.innerHTML = `<i class="bi bi-x-circle text-danger"></i> Offline`;
+                    setTimeout(() => {
+                        btnEl.innerHTML = `<i class="bi bi-arrow-repeat"></i> Sync`;
+                        btnEl.disabled = false;
+                    }, 2500);
+                }
+            } catch (err) {
+                console.debug('SportyBet odds sync failed:', err);
+                btnEl.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Err`;
+            } finally {
+                if (icon) icon.className = 'bi bi-arrow-repeat';
+                btnEl.disabled = false;
+            }
+        }
+
         function analyzeSelectedScrapedGames() {
             const selectedRows = document.querySelectorAll('.fixture-row.selected');
             if (selectedRows.length === 0) {
@@ -948,6 +1088,71 @@
         // ACCA SIMULATOR & CUSTOM BUILDER LOGIC
         // ==========================================
         let currentSimSlip = null;
+        let currentSimVariation = 0;
+        let totalSimVariations = 1;
+
+        function applyAccaPreset(targetOdds, matchCount, marketFilter, strategy) {
+            setTargetOdds(targetOdds);
+            document.getElementById('simMatchCount').value = matchCount;
+            if (document.getElementById('simMarketFilter')) document.getElementById('simMarketFilter').value = marketFilter;
+            if (document.getElementById('simStrategy')) document.getElementById('simStrategy').value = strategy;
+            currentSimVariation = 0;
+            runAccaSimulation(0);
+        }
+
+        function toggleSimKellySizer() {
+            const area = document.getElementById('simKellyArea');
+            if (area) {
+                area.style.display = area.style.display === 'none' ? 'block' : 'none';
+                recalcSimKelly();
+            }
+        }
+
+        function recalcSimKelly() {
+            const br = parseFloat(document.getElementById('simBankrollInput').value) || 5000;
+            const halfK = Math.max(10, Math.round((br * 0.02) / 10) * 10);
+            const quartK = Math.max(10, Math.round((br * 0.01) / 10) * 10);
+            const hEl = document.getElementById('simKellyHalfVal');
+            const qEl = document.getElementById('simKellyQuarterVal');
+            if (hEl) hEl.innerText = `${halfK.toLocaleString()} NGN`;
+            if (qEl) qEl.innerText = `${quartK.toLocaleString()} NGN`;
+        }
+
+        function applySimKelly() {
+            const br = parseFloat(document.getElementById('simBankrollInput').value) || 5000;
+            const halfK = Math.max(10, Math.round((br * 0.02) / 10) * 10);
+            setSimStake(halfK);
+            const area = document.getElementById('simKellyArea');
+            if (area) area.style.display = 'none';
+        }
+
+        function shuffleAccaSlip() {
+            currentSimVariation = (currentSimVariation + 1) % Math.max(1, totalSimVariations);
+            runAccaSimulation(currentSimVariation);
+        }
+
+        function copySimSlipFormatted() {
+            if (!currentSimSlip || !currentSimSlip.matches) {
+                alert('Run simulation first');
+                return;
+            }
+            const stake = getSimStake();
+            const odds = currentSimSlip.combined_odds;
+            const payout = (stake * odds).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            let txt = `🔥 OPTIMAL SPORTYBET ACCA TICKET 🔥\n`;
+            txt += `⚡ Total Multiplier: ${odds}x\n`;
+            txt += `🎯 Joint Probability: ${currentSimSlip.joint_probability}%\n`;
+            txt += `💰 Stake: ${stake.toLocaleString()} NGN | Est. Return: ${payout} NGN\n\n`;
+            currentSimSlip.matches.forEach((m, i) => {
+                txt += `[${i+1}] ${m.home_team} vs ${m.away_team}\n    👉 Pick: ${m.selected_outcome} @ ${m.selected_odds.toFixed(2)}\n`;
+            });
+            txt += `\n🤖 Generated by Multi-Sport Predictor V4`;
+            navigator.clipboard.writeText(txt).then(() => {
+                alert('Acca Slip copied to clipboard! Ready to share on WhatsApp or Telegram.');
+            }).catch(() => {
+                prompt("Copy your Acca Slip below:", txt);
+            });
+        }
 
         function setTargetOdds(val) {
             document.getElementById('simTargetOdds').value = val;
@@ -989,7 +1194,7 @@
             }
         }
 
-        async function runAccaSimulation() {
+        async function runAccaSimulation(varIdx = 0) {
             const btn = document.getElementById('btnRunSim');
             const targetOdds = parseFloat(document.getElementById('simTargetOdds').value) || 10.0;
             const matchCount = parseInt(document.getElementById('simMatchCount').value) || 4;
@@ -1009,7 +1214,8 @@
                         match_count: matchCount,
                         strategy: strategy,
                         stake: stake,
-                        market_filter: marketFilter
+                        market_filter: marketFilter,
+                        variation_index: varIdx
                     })
                 });
 
@@ -1023,6 +1229,12 @@
                 }
 
                 currentSimSlip = data.optimal_slip;
+                totalSimVariations = data.total_variations || 1;
+                currentSimVariation = data.variation_index || 0;
+
+                const vNumEl = document.getElementById('simVariantNum');
+                if (vNumEl) vNumEl.innerText = `${currentSimVariation + 1}/${totalSimVariations}`;
+
                 document.getElementById('simResultsBox').style.display = 'block';
 
                 // Update summary banner

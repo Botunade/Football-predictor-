@@ -115,6 +115,38 @@ async def api_refresh_scraped():
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
+@app.get("/api/sportybet/sync-odds", response_class=JSONResponse)
+async def api_sync_sportybet_odds(home: str, away: str):
+    """
+    On-demand live SportyBet odds synchronization for any fixture.
+    Resolves real-time 1X2 odds, multi-market odds, and official SportyBet eventId.
+    """
+    try:
+        aggregator = get_stats_aggregator()
+        sb_match = aggregator.resolve_match_sportybet_odds(home, away)
+        if sb_match and sb_match.odds_home > 1.0 and sb_match.odds_away > 1.0:
+            return {
+                "status": "success",
+                "found": True,
+                "home_team": sb_match.home_team,
+                "away_team": sb_match.away_team,
+                "odds_home": sb_match.odds_home,
+                "odds_draw": sb_match.odds_draw,
+                "odds_away": sb_match.odds_away,
+                "sporty_id": sb_match.sporty_id,
+                "market_odds": sb_match.market_odds or {},
+                "league": sb_match.league
+            }
+        else:
+            return {
+                "status": "success",
+                "found": False,
+                "message": f"No active SportyBet market currently open for {home} vs {away}"
+            }
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
 @app.post("/api/preview-code")
 async def preview_code(request: Request):
     """Preview matches in a SportyBet booking code without running full analysis"""
@@ -251,6 +283,7 @@ async def api_simulate_acca(request: Request):
         strategy = str(body.get("strategy", "max_prob"))
         stake = float(body.get("stake", 10.0) or 10.0)
         market_filter = str(body.get("market_filter", "all"))
+        variation_index = int(body.get("variation_index", 0) or 0)
 
         from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
         from models.acca_simulator import AccaSimulator
@@ -263,7 +296,8 @@ async def api_simulate_acca(request: Request):
             match_count=match_count,
             strategy=strategy,
             stake=stake,
-            market_filter=market_filter
+            market_filter=market_filter,
+            variation_index=variation_index
         )
         return JSONResponse(result)
     except Exception as e:
@@ -281,25 +315,49 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
         aggregator = get_stats_aggregator()
         matches = []
         for m in raw_matches:
+            h_name = str(m.get("home_team", "")).strip()
+            a_name = str(m.get("away_team", "")).strip()
             sp_id = str(m.get("sporty_id") or "").strip()
-            if not sp_id:
-                sb_m = aggregator.find_sportybet_match(str(m.get("home_team", "")), str(m.get("away_team", "")))
-                if sb_m and sb_m.sporty_id:
-                    sp_id = sb_m.sporty_id
+            oh = float(m.get("odds_home", 2.10))
+            od = float(m.get("odds_draw", 3.20))
+            oa = float(m.get("odds_away", 3.10))
+            m_odds = dict(m.get("market_odds") or {})
+
+            # Auto-resolve live SportyBet ground-truth if unverified or generic fallback
+            sb_m = aggregator.resolve_match_sportybet_odds(h_name, a_name)
+            if sb_m and sb_m.odds_home > 1.0 and sb_m.odds_away > 1.0:
+                sp_id = sb_m.sporty_id or sp_id
+                # If user had generic default odds, update with live SportyBet true odds
+                if (oh == 2.10 and od == 3.20 and oa == 3.10) or not m.get("odds_verified"):
+                    oh = float(sb_m.odds_home)
+                    od = float(sb_m.odds_draw) if sb_m.odds_draw > 1.0 else 3.20
+                    oa = float(sb_m.odds_away)
+                if sb_m.market_odds:
+                    m_odds.update(sb_m.market_odds)
+
+            selected_out = m.get("selected_outcome", "Home")
+            # If user had generic default pick and real odds inverted, align pick
+            if selected_out == "Home" and (oh == 2.10 and od == 3.20 and oa == 3.10) and sb_m:
+                selected_out = "Away" if oa < oh else "Home"
+
+            sel_odds = float(m.get("selected_odds", 0.0))
+            if sel_odds <= 1.0:
+                sel_odds = m_odds.get(selected_out, oh if selected_out == "Home" else (oa if selected_out == "Away" else od))
+
             matches.append({
-                "home_team": m.get("home_team"),
-                "away_team": m.get("away_team"),
+                "home_team": h_name,
+                "away_team": a_name,
                 "league": m.get("league", "General"),
-                "odds_home": float(m.get("odds_home", 2.10)),
-                "odds_draw": float(m.get("odds_draw", 3.20)),
-                "odds_away": float(m.get("odds_away", 3.10)),
-                "selected_outcome": m.get("selected_outcome", "Home"),
-                "selected_odds": float(m.get("selected_odds", m.get("odds_home", 2.10))),
+                "odds_home": oh,
+                "odds_draw": od,
+                "odds_away": oa,
+                "selected_outcome": selected_out,
+                "selected_odds": sel_odds,
                 "sporty_id": sp_id,
                 "sporty_market_id": m.get("sporty_market_id", ""),
                 "sporty_outcome_id": m.get("sporty_outcome_id", ""),
                 "sporty_specifier": m.get("sporty_specifier", ""),
-                "market_odds": m.get("market_odds", {}),
+                "market_odds": m_odds,
                 "sport": "football",
                 "status": "upcoming"
             })

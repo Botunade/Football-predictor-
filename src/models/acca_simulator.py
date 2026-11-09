@@ -197,11 +197,13 @@ class AccaSimulator:
         strategy: str = "max_prob",
         stake: float = 10.0,
         market_filter: str = "all",
+        variation_index: int = 0,
         max_candidates: int = 40
     ) -> Dict[str, Any]:
         """
         Runs combinatorial search to find the optimal accumulator of length match_count
         that hits approx target_odds across all supported markets.
+        Supports cycling through alternative variations via variation_index.
         """
         ideal_leg = max(1.18, min(3.50, target_odds ** (1.0 / max(1, match_count))))
         raw_candidates = self._prepare_candidates(ideal_leg_odds=ideal_leg, strategy=strategy, market_filter=market_filter)
@@ -324,8 +326,9 @@ class AccaSimulator:
         # Sort by score descending
         best_slips.sort(key=lambda x: x["score"], reverse=True)
 
-        optimal = best_slips[0]
-        runners_up = best_slips[1:3]
+        chosen_idx = max(0, min(variation_index, len(best_slips) - 1))
+        optimal = best_slips[chosen_idx]
+        runners_up = [s for i, s in enumerate(best_slips) if i != chosen_idx][:3]
 
         return {
             "success": True,
@@ -333,6 +336,8 @@ class AccaSimulator:
             "match_count": match_count,
             "strategy": strategy,
             "stake": stake,
+            "variation_index": chosen_idx,
+            "total_variations": len(best_slips),
             "optimal_slip": {
                 "combined_odds": optimal["combined_odds"],
                 "joint_probability": optimal["joint_probability"],

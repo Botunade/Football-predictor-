@@ -413,20 +413,38 @@
                     </div>
                 </div>
 
-                <!-- Custom Stake Input (Any NGN Amount) -->
+                <!-- Custom Stake Input (Any NGN Amount) & Kelly Bankroll Sizer -->
                 <div class="col-lg-3 col-md-6 col-12">
-                    <label class="small text-secondary fw-bold text-uppercase mb-1">Stake Amount (NGN) — Any Amount</label>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="small text-secondary fw-bold text-uppercase mb-0">Stake Amount (NGN)</label>
+                        <span class="text-info small fw-bold cursor-pointer" onclick="toggleResultsKellySizer()" style="font-size: 0.72rem;">
+                            <i class="bi bi-calculator me-1"></i>Kelly Sizer
+                        </span>
+                    </div>
                     <div class="input-group input-group-sm mb-1">
                         <span class="input-group-text bg-dark border-secondary text-warning fw-bold">NGN</span>
                         <input type="number" id="customStakeInput" class="form-control bg-dark border-secondary text-white fw-bold" min="10" step="10" value="10" oninput="onStakeAmountChange()">
                     </div>
-                    <div class="d-flex gap-1 flex-wrap">
+                    <div class="d-flex gap-1 flex-wrap mb-1">
                         <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(10)">10</button>
                         <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(50)">50</button>
                         <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(100)">100</button>
                         <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(200)">200</button>
                         <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(500)">500</button>
                         <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(1000)">1,000</button>
+                    </div>
+
+                    <!-- Interactive Kelly Stake Calculator Widget -->
+                    <div id="resultsKellyArea" class="p-2 rounded bg-black border border-secondary mt-1" style="display: none; font-size: 0.72rem;">
+                        <div class="small text-secondary mb-1">Total Bankroll (NGN):</div>
+                        <div class="input-group input-group-sm mb-1">
+                            <input type="number" id="resultsBankrollInput" class="form-control bg-dark border-secondary text-white" value="5000" min="100" step="500" oninput="recalcResultsKelly()" style="font-size: 0.72rem;">
+                            <button class="btn btn-outline-info" type="button" onclick="applyResultsKelly()">Use</button>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted" style="font-size: 0.68rem;">
+                            <span>Half-Kelly: <strong class="text-success" id="resKellyHalfVal">100 NGN</strong></span>
+                            <span>Quarter: <strong class="text-info" id="resKellyQuarterVal">50 NGN</strong></span>
+                        </div>
                     </div>
                 </div>
 
@@ -856,24 +874,90 @@
             });
         }
 
-        // Copy Summary to Clipboard
-        function copyAnalysisSummary() {
-            const code = "{{ result.code }}";
-            let text = `SportyBet Predictor V4 - Slip Report [${code}]\n`;
-            text += `Total Matches: {{ result.matches|length }} | Value Bets Detected: {{ result.value_bets|length }}\n\n`;
+        // Kelly Criterion Stake Sizer for Results Hub
+        function toggleResultsKellySizer() {
+            const area = document.getElementById('resultsKellyArea');
+            if (!area) return;
+            area.style.display = (area.style.display === 'none' || area.style.display === '') ? 'block' : 'none';
+            if (area.style.display === 'block') recalcResultsKelly();
+        }
 
-            document.querySelectorAll('.match-card').forEach((c, i) => {
+        function recalcResultsKelly() {
+            const bInput = document.getElementById('resultsBankrollInput');
+            const bankroll = parseFloat(bInput ? bInput.value : 5000) || 5000;
+            const oddsText = (document.getElementById('slipTotalOdds') || {}).innerText || "2.0";
+            const decimalOdds = parseFloat(oddsText.replace('x', '')) || 2.0;
+
+            // Compute aggregate estimated win probability
+            let avgProb = 0.55;
+            const cards = document.querySelectorAll('.match-card');
+            if (cards.length > 0) {
+                let confSum = 0;
+                cards.forEach(c => {
+                    confSum += (parseInt(c.getAttribute('data-conf')) || 6);
+                });
+                avgProb = Math.min(0.85, Math.max(0.15, (confSum / cards.length) * 0.09));
+            }
+
+            const b = Math.max(0.01, decimalOdds - 1.0);
+            const p = avgProb;
+            const q = 1.0 - p;
+            let fullKellyFraction = (b * p - q) / b;
+            if (fullKellyFraction <= 0) fullKellyFraction = 0.02; // Minimum baseline
+
+            const halfStake = Math.max(10, Math.min(Math.round(bankroll * (fullKellyFraction / 2) / 10) * 10, bankroll * 0.25));
+            const quarterStake = Math.max(10, Math.min(Math.round(bankroll * (fullKellyFraction / 4) / 10) * 10, bankroll * 0.15));
+
+            const halfEl = document.getElementById('resKellyHalfVal');
+            const qEl = document.getElementById('resKellyQuarterVal');
+            if (halfEl) halfEl.innerText = `${halfStake.toLocaleString()} NGN`;
+            if (qEl) qEl.innerText = `${quarterStake.toLocaleString()} NGN`;
+        }
+
+        function applyResultsKelly() {
+            const halfEl = document.getElementById('resKellyHalfVal');
+            if (!halfEl) return;
+            const stakeVal = parseInt(halfEl.innerText.replace(/[^0-9]/g, '')) || 50;
+            setCustomStake(stakeVal);
+        }
+
+        // Copy VIP Bet Slip Summary for WhatsApp / Telegram Sharing
+        function copyAnalysisSummary() {
+            const code = document.getElementById('autoBookingCode')?.value || "{{ result.code }}";
+            const oddsEl = document.getElementById('slipTotalOdds');
+            const totalOdds = oddsEl ? oddsEl.innerText : '--';
+            const stake = getCustomStake();
+            const numericOdds = parseFloat(totalOdds.replace('x', '')) || 1.0;
+            const estReturn = (stake * numericOdds).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+            let text = `🔥 SPORTYBET VIP ACCA TICKET 🔥\n`;
+            if (code && code.length <= 10 && !code.includes(' ')) {
+                text += `📋 Booking Code: *${code.toUpperCase()}*\n`;
+            }
+            text += `⚡ Total Multiplier: *${totalOdds}*\n`;
+            text += `💰 Stake: ${stake.toLocaleString()} NGN | Est Return: ${estReturn} NGN\n`;
+            text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+
+            const cards = document.querySelectorAll('.match-card');
+            cards.forEach((c, i) => {
                 const home = c.getAttribute('data-home');
                 const away = c.getAttribute('data-away');
-                const odd = c.getAttribute('data-odds');
+                const selectEl = c.querySelector('.rec-outcome-select');
+                const selOption = selectEl && selectEl.selectedIndex >= 0 ? selectEl.options[selectEl.selectedIndex] : null;
+                const pickText = selOption ? selOption.text : (c.getAttribute('data-odds') || 'Home');
                 const isVal = c.getAttribute('data-is-value') === 'true';
-                text += `[${i+1}] ${home} vs ${away} @ ${odd} ${isVal ? '[VALUE BET]' : ''}\n`;
+
+                text += `[${i+1}] ${home} vs ${away}\n`;
+                text += `    👉 Pick: *${pickText}* ${isVal ? '💎 [VALUE BET]' : ''}\n`;
             });
 
+            text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            text += `🤖 Generated by Multi-Sport Predictor V4 (Dixon-Coles & AI Sharp Intelligence)`;
+
             navigator.clipboard.writeText(text).then(() => {
-                alert('Analysis summary copied to clipboard!');
+                alert('VIP Bet Slip copied to clipboard! Ready to paste into WhatsApp or Telegram.');
             }).catch(err => {
-                alert('Could not copy: ' + err);
+                prompt('Copy your VIP Bet Slip below:', text);
             });
         }
 

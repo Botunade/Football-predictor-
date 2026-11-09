@@ -327,7 +327,7 @@ class StatsAggregator:
             logger.info(f"Statistics refreshed: {len(self._sportybet_cache)} SportyBet, {len(self._forebet_cache)} Forebet, {len(self._predictz_cache)} PredictZ, {len(self._matchoutlook_cache)} MatchOutlook, {len(self._scoregpt_cache)} ScoreGPT, {len(self._betensured_cache)} Betensured")
 
     def find_sportybet_match(self, home: str, away: str) -> Optional[SportyBetFixtureOdds]:
-        """Find SportyBet match with real live bookmaker odds"""
+        """Find SportyBet match with real live bookmaker odds using fuzzy similarity"""
         best_match = None
         best_score = 0.0
 
@@ -336,11 +336,71 @@ class StatsAggregator:
             sim_a = self._match_similarity(away, sb.away_team)
             score = (sim_h + sim_a) / 2.0
 
-            if score > 0.55 and score > best_score:
+            if score > 0.50 and score > best_score:
                 best_score = score
                 best_match = sb
 
         return best_match
+
+    def resolve_match_sportybet_odds(self, home: str, away: str) -> Optional[SportyBetFixtureOdds]:
+        """
+        Actively resolves real-time SportyBet odds for a given fixture.
+        1. Checks in-memory SportyBet cache.
+        2. If not found, queries SportyBet's live upcoming factsCenter API for an active event.
+        """
+        match = self.find_sportybet_match(home, away)
+        if match and match.odds_home > 1.0 and match.odds_away > 1.0:
+            return match
+
+        # Attempt on-demand live lookup from SportyBet upcoming factsCenter API
+        try:
+            import urllib.request
+            import time
+            ts = int(time.time() * 1000)
+            url = (
+                f"https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?"
+                f"sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C90%2C68&pageSize=80&pageNum=1&option=1&_t={ts}"
+            )
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "application/json"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=4) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                tournaments = data.get("data", {}).get("tournaments", [])
+                for tourn in tournaments:
+                    l_name = tourn.get("name") or tourn.get("categoryName") or "Football"
+                    for ev in tourn.get("events", []):
+                        ev_h = ev.get("homeTeamName", "")
+                        ev_a = ev.get("awayTeamName", "")
+                        if not ev_h or not ev_a:
+                            continue
+                        sim_h = self._match_similarity(home, ev_h)
+                        sim_a = self._match_similarity(away, ev_a)
+                        if (sim_h + sim_a) / 2.0 > 0.50:
+                            from .sportybet_odds_scraper import SportyBetOddsScraper
+                            scraper = SportyBetOddsScraper()
+                            oh, od, oa, m_odds = scraper._parse_event_markets(ev)
+                            if oh > 1.0 and oa > 1.0:
+                                res = SportyBetFixtureOdds(
+                                    home_team=ev_h,
+                                    away_team=ev_a,
+                                    league=l_name,
+                                    odds_home=oh,
+                                    odds_draw=od if od > 1.0 else 3.20,
+                                    odds_away=oa,
+                                    sporty_id=str(ev.get("eventId", "")),
+                                    market_odds=m_odds
+                                )
+                                self._sportybet_cache.append(res)
+                                return res
+        except Exception as e:
+            logger.debug(f"Live SportyBet odds lookup failed for {home} vs {away}: {e}")
+
+        return None
 
     def find_forebet_match(self, home: str, away: str) -> Optional[ForebetPrediction]:
         """Find Forebet prediction matching home & away team"""
