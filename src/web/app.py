@@ -229,9 +229,83 @@ async def api_place_bet(request: Request):
             confirm=confirm,
             headless=True
         )
+
+        # Log into BetTracker journal on success
+        if res.get("success"):
+            try:
+                from .automation.bet_tracker import get_bet_tracker
+            except (ImportError, ValueError):
+                try:
+                    from automation.bet_tracker import get_bet_tracker
+                except ImportError:
+                    from src.automation.bet_tracker import get_bet_tracker
+            try:
+                tracker = get_bet_tracker()
+                tracker.record_bet(
+                    booking_code=code,
+                    stake=stake,
+                    combined_odds=float(res.get("odds") or 2.0),
+                    legs=[],
+                    ticket_id=str(res.get("ticket_id") or ""),
+                    is_dry_run=dry_run,
+                    notes=f"Auto-bet from Web UI (dry_run={dry_run})"
+                )
+            except Exception as e_track:
+                logger.debug(f"Tracker logging notice: {e_track}")
+
         return JSONResponse(res)
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+
+@app.get("/api/tracker/bets", response_class=JSONResponse)
+async def api_tracker_get_bets(limit: int = 50, include_dry_runs: bool = True):
+    """Retrieve recorded bets with leg details for the P&L Journal"""
+    try:
+        try:
+            from .automation.bet_tracker import get_bet_tracker
+        except (ImportError, ValueError):
+            from src.automation.bet_tracker import get_bet_tracker
+        tracker = get_bet_tracker()
+        return {"status": "success", "bets": tracker.get_bets(limit=limit, include_dry_runs=include_dry_runs)}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@app.get("/api/tracker/summary", response_class=JSONResponse)
+async def api_tracker_get_summary(include_dry_runs: bool = False):
+    """Retrieve P&L summary, ROI, and market-by-market strike rate analytics"""
+    try:
+        try:
+            from .automation.bet_tracker import get_bet_tracker
+        except (ImportError, ValueError):
+            from src.automation.bet_tracker import get_bet_tracker
+        tracker = get_bet_tracker()
+        return {"status": "success", "summary": tracker.get_pnl_summary(include_dry_runs=include_dry_runs)}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@app.post("/api/tracker/settle", response_class=JSONResponse)
+async def api_tracker_settle_bet(request: Request):
+    """Manually or automatically settle a bet as WON, LOST, or VOID"""
+    try:
+        body = await request.json()
+        bet_id = int(body.get("bet_id"))
+        status = str(body.get("status", "WON")).upper()
+        payout = body.get("payout")
+        if payout is not None:
+            payout = float(payout)
+
+        try:
+            from .automation.bet_tracker import get_bet_tracker
+        except (ImportError, ValueError):
+            from src.automation.bet_tracker import get_bet_tracker
+        tracker = get_bet_tracker()
+        ok = tracker.settle_bet(bet_id=bet_id, status=status, actual_payout=payout)
+        return {"status": "success" if ok else "not_found", "bet_id": bet_id, "settled_as": status}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.get("/api/automation/balance", response_class=JSONResponse)
