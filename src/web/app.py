@@ -38,6 +38,10 @@ from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
 from feature_engineering import build_features
 from models.predictor import predict_match
 from models.ai_agent import get_ai_agent
+from automation.automation_manager import get_automation_manager
+from automation.bet_tracker import get_bet_tracker
+from automation.scheduler import get_autonomous_scheduler
+from automation.notifier import get_notifier
 
 app = FastAPI(title="Multi-Sport Predictor V4", description="AI-Powered Sports Betting Analysis")
 
@@ -213,14 +217,6 @@ async def api_place_bet(request: Request):
         dry_run = str(data.get("dry_run", "true")).lower() in ["true", "1", "yes"]
         confirm = str(data.get("confirm", "false")).lower() in ["true", "1", "yes"]
 
-        try:
-            from .automation.automation_manager import get_automation_manager
-        except (ImportError, ValueError):
-            try:
-                from automation.automation_manager import get_automation_manager
-            except ImportError:
-                from src.automation.automation_manager import get_automation_manager
-
         mgr = get_automation_manager()
         res = await mgr.execute_booking_code_wager(
             code=code,
@@ -232,13 +228,6 @@ async def api_place_bet(request: Request):
 
         # Log into BetTracker journal on success
         if res.get("success"):
-            try:
-                from .automation.bet_tracker import get_bet_tracker
-            except (ImportError, ValueError):
-                try:
-                    from automation.bet_tracker import get_bet_tracker
-                except ImportError:
-                    from src.automation.bet_tracker import get_bet_tracker
             try:
                 tracker = get_bet_tracker()
                 tracker.record_bet(
@@ -262,10 +251,6 @@ async def api_place_bet(request: Request):
 async def api_tracker_get_bets(limit: int = 50, include_dry_runs: bool = True):
     """Retrieve recorded bets with leg details for the P&L Journal"""
     try:
-        try:
-            from .automation.bet_tracker import get_bet_tracker
-        except (ImportError, ValueError):
-            from src.automation.bet_tracker import get_bet_tracker
         tracker = get_bet_tracker()
         return {"status": "success", "bets": tracker.get_bets(limit=limit, include_dry_runs=include_dry_runs)}
     except Exception as e:
@@ -276,10 +261,6 @@ async def api_tracker_get_bets(limit: int = 50, include_dry_runs: bool = True):
 async def api_tracker_get_summary(include_dry_runs: bool = False):
     """Retrieve P&L summary, ROI, and market-by-market strike rate analytics"""
     try:
-        try:
-            from .automation.bet_tracker import get_bet_tracker
-        except (ImportError, ValueError):
-            from src.automation.bet_tracker import get_bet_tracker
         tracker = get_bet_tracker()
         return {"status": "success", "summary": tracker.get_pnl_summary(include_dry_runs=include_dry_runs)}
     except Exception as e:
@@ -297,10 +278,6 @@ async def api_tracker_settle_bet(request: Request):
         if payout is not None:
             payout = float(payout)
 
-        try:
-            from .automation.bet_tracker import get_bet_tracker
-        except (ImportError, ValueError):
-            from src.automation.bet_tracker import get_bet_tracker
         tracker = get_bet_tracker()
         ok = tracker.settle_bet(bet_id=bet_id, status=status, actual_payout=payout)
         return {"status": "success" if ok else "not_found", "bet_id": bet_id, "settled_as": status}
@@ -312,16 +289,11 @@ async def api_tracker_settle_bet(request: Request):
 async def api_get_balance(refresh: bool = False):
     """Fetch live SportyBet account balance."""
     try:
-        try:
-            from .automation.automation_manager import get_automation_manager
-        except (ImportError, ValueError):
-            from automation.automation_manager import get_automation_manager
-
         mgr = get_automation_manager()
         res = await mgr.get_account_balance(force_refresh=refresh)
         return JSONResponse(res)
     except Exception as e:
-        return JSONResponse({"success": False, "message": str(e), "balance_ngn": 90.93, "balance_text": "NGN 90.93"})
+        return JSONResponse({"success": False, "message": str(e), "balance_ngn": 70.93, "balance_text": "NGN 70.93"})
 
 
 @app.post("/api/automation/generate-booking-code", response_class=JSONResponse)

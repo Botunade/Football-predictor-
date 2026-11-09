@@ -13,6 +13,17 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
+try:
+    from ..code_reader import normalize_sportybet_selection
+except (ImportError, ValueError):
+    try:
+        from data_extractor.code_reader import normalize_sportybet_selection
+    except ImportError:
+        try:
+            from src.data_extractor.code_reader import normalize_sportybet_selection
+        except ImportError:
+            normalize_sportybet_selection = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,14 +191,6 @@ class SportyBetOddsScraper:
         """Extracts 1X2 and 45+ multi-market odds (1st Half, 2nd Half, DC, O/U, GG/NG, DNB, Team O/U, 1UP/2UP) from a SportyBet event payload."""
         h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
         m_odds: Dict[str, float] = {}
-
-        try:
-            try:
-                from data_extractor.code_reader import normalize_sportybet_selection
-            except ImportError:
-                from src.data_extractor.code_reader import normalize_sportybet_selection
-        except Exception:
-            normalize_sportybet_selection = None
 
         for m in ev.get("markets", []):
             m_id = str(m.get("id", "")).strip()

@@ -26,6 +26,17 @@ except ImportError:
         except ImportError:
             run_coro_with_proactor = None
 
+try:
+    from .sportybet_bot import SportyBetAutomator
+except (ImportError, ValueError):
+    try:
+        from automation.sportybet_bot import SportyBetAutomator
+    except ImportError:
+        try:
+            from src.automation.sportybet_bot import SportyBetAutomator
+        except ImportError:
+            SportyBetAutomator = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,10 +72,8 @@ class AutomationManager:
             return {"success": True, **self._cached_balance}
 
         async def _fetch():
-            try:
-                from .sportybet_bot import SportyBetAutomator
-            except (ImportError, ValueError):
-                from src.automation.sportybet_bot import SportyBetAutomator
+            if SportyBetAutomator is None:
+                return {"success": False, "message": "SportyBetAutomator unavailable", **self._cached_balance}
 
             async with SportyBetAutomator(
                 phone=self.phone,
@@ -104,28 +113,22 @@ class AutomationManager:
         then falls back to Playwright browser session if needed.
         """
         try:
-            try:
-                from .sportybet_bot import SportyBetAutomator
-            except (ImportError, ValueError):
-                from src.automation.sportybet_bot import SportyBetAutomator
-
             # Fast path: Direct SportyBet Share API (instant, supports all 550+ catalog fixtures)
-            api_code = SportyBetAutomator.generate_booking_code_via_api(matches)
-            if api_code:
-                return {
-                    "success": True,
-                    "code": api_code,
-                    "matches_count": len(matches),
-                    "message": f"Successfully generated booking code {api_code}"
-                }
+            if SportyBetAutomator:
+                api_code = SportyBetAutomator.generate_booking_code_via_api(matches)
+                if api_code:
+                    return {
+                        "success": True,
+                        "code": api_code,
+                        "matches_count": len(matches),
+                        "message": f"Successfully generated booking code {api_code}"
+                    }
         except Exception as e:
             logger.warning(f"Direct API booking code path failed, falling back to browser: {e}")
 
         async def _generate():
-            try:
-                from .sportybet_bot import SportyBetAutomator
-            except (ImportError, ValueError):
-                from src.automation.sportybet_bot import SportyBetAutomator
+            if not SportyBetAutomator:
+                return {"success": False, "message": "SportyBetAutomator unavailable"}
 
             async with SportyBetAutomator(
                 phone=self.phone,
@@ -219,16 +222,11 @@ class AutomationManager:
                 "message": "SportyBet phone or password not configured in .env"
             }
 
-        try:
-            from .sportybet_bot import SportyBetAutomator
-        except (ImportError, ValueError):
-            try:
-                from src.automation.sportybet_bot import SportyBetAutomator
-            except ImportError:
-                return {
-                    "status": "error",
-                    "message": "SportyBetAutomator module is being built by the automation engineer subagent."
-                }
+        if SportyBetAutomator is None:
+            return {
+                "status": "error",
+                "message": "SportyBetAutomator module unavailable."
+            }
 
         automator = SportyBetAutomator(
             phone=self.phone,
@@ -256,10 +254,8 @@ class AutomationManager:
         confirm: bool = False,
         headless: bool = True
     ) -> Dict[str, Any]:
-        try:
-            from .sportybet_bot import SportyBetAutomator
-        except (ImportError, ValueError):
-            from src.automation.sportybet_bot import SportyBetAutomator
+        if SportyBetAutomator is None:
+            return {"success": False, "message": "SportyBetAutomator unavailable"}
 
         async with SportyBetAutomator(
             phone=self.phone,

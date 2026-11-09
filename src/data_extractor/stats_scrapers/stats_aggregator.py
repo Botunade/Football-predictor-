@@ -6,6 +6,7 @@ and form guides scraped from Forebet and PredictZ.
 
 import asyncio
 import difflib
+import functools
 import logging
 import re
 import time
@@ -191,8 +192,10 @@ class StatsAggregator:
         except Exception as e:
             logger.debug(f"Failed to save disk cache: {e}")
 
-    def _normalize_name(self, name: str) -> str:
-        """Normalize team names for fast fuzzy matching"""
+    @staticmethod
+    @functools.lru_cache(maxsize=8192)
+    def _normalize_name(name: str) -> str:
+        """Normalize team names for fast fuzzy matching with LRU cache"""
         name = name.lower().strip()
         replacements = [
             ("fc", ""), ("afc", ""), ("cf", ""), ("sc", ""), ("fk", ""),

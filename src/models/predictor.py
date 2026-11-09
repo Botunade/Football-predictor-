@@ -203,7 +203,9 @@ class MatchPredictor:
         Returns:
             Dictionary with H2H, BTTS, and Over 2.5 predictions
         """
-        match_str = f"{features['home_team']} vs {features['away_team']}"
+        home_name = features.get("home_team") or "Home Team"
+        away_name = features.get("away_team") or "Away Team"
+        match_str = f"{home_name} vs {away_name}"
         bet_code = match_str.replace(' ', '_').upper()
 
         # For non-football sports, use simplified prediction
