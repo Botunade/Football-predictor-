@@ -184,8 +184,8 @@
                     <span class="badge bg-dark border border-secondary px-3 py-2 text-info">
                         <i class="bi bi-cloud-check-fill text-success me-1"></i> 5 Scrapers
                     </span>
-                    <span class="badge bg-dark border border-secondary px-3 py-2 text-purple" style="color: #c084fc;">
-                        <i class="bi bi-cpu-fill text-warning me-1"></i> claude-sonnet-5
+                    <span id="aiStatusBadge" class="badge bg-dark border border-secondary px-3 py-2 shadow-sm" style="color: #c084fc;" title="Checking 9Router port 20128...">
+                        <i class="bi bi-cpu-fill text-warning me-1" id="aiStatusIcon"></i> <span id="aiStatusLabel">9Router Checking...</span>
                     </span>
                 </div>
             </div>
@@ -1473,11 +1473,39 @@
             }
         }
 
+        // Active 9Router AI Port 20128 Status Checker
+        async function checkAIHealth() {
+            const badge = document.getElementById('aiStatusBadge');
+            const icon = document.getElementById('aiStatusIcon');
+            const label = document.getElementById('aiStatusLabel');
+            if (!badge || !label) return;
+
+            try {
+                const res = await fetch('/api/health/ai');
+                const data = await res.json();
+                if (data.connected) {
+                    badge.className = 'badge bg-dark border border-success px-3 py-2 text-white shadow-sm';
+                    if (icon) icon.className = 'bi bi-check-circle-fill text-success me-1';
+                    label.innerText = `9Router AI Active (${data.model} - ${data.latency_sec}s)`;
+                    badge.title = data.message || '9Router Live Connection Active';
+                } else {
+                    badge.className = 'badge bg-dark border border-warning px-3 py-2 text-warning shadow-sm';
+                    if (icon) icon.className = 'bi bi-cpu text-warning me-1';
+                    label.innerText = 'Dixon-Coles Quant Engine (AI Standby)';
+                    badge.title = data.message || 'Local Dixon-Coles Bivariate Poisson Engine Active';
+                }
+            } catch (e) {
+                console.debug('AI Health probe error:', e);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             // Apply default SportyBet verified filter
             filterFixtures();
             // Fetch live verified balance
             refreshGlobalSportyBalance(false);
+            // Probe 9Router status
+            checkAIHealth();
         });
     </script>
 </body>

@@ -8,6 +8,7 @@ import os
 import re
 import json
 import logging
+import time
 import urllib.request
 from typing import Dict, Any, Optional, List, Tuple
 from dotenv import load_dotenv
@@ -46,7 +47,7 @@ class AIAnalyticalAgent:
         return self._is_active
 
     def _call_llm(self, prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.2) -> Optional[str]:
-        """Make an OpenAI-compatible completion request with stream=False and model fallback"""
+        """Make an OpenAI-compatible completion request supporting both standard JSON and SSE event-streams."""
         if not self._is_active:
             return None
 
@@ -62,16 +63,16 @@ class AIAnalyticalAgent:
         messages.append({"role": "user", "content": prompt})
 
         candidate_models = [self.model_name]
-        for fallback in ["gemini/gemini-3.5-flash-lite", "bzl/gemini-3.1-flash-lite-preview", "cf/@cf/meta/llama-3.1-8b-instruct-fp8-fast"]:
+        for fallback in ["gemini/gemini-3.5-flash-lite", "claude-sonnet-5", "claude-coworker", "bzl/gemini-3.1-flash-lite-preview", "cf/@cf/meta/llama-3.1-8b-instruct-fp8-fast"]:
             if fallback not in candidate_models:
                 candidate_models.append(fallback)
 
-        for model in candidate_models[:2]:
+        for model in candidate_models[:3]:
             payload = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": 800,
+                "max_tokens": 1200,
                 "stream": False
             }
 
@@ -82,15 +83,102 @@ class AIAnalyticalAgent:
                     headers=headers,
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=2.5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    return data["choices"][0]["message"]["content"]
+                with urllib.request.urlopen(req, timeout=25.0) as resp:
+                    raw_text = resp.read().decode("utf-8", errors="replace")
+
+                    # Handle 9Router Server-Sent Events (SSE) stream format
+                    if "data:" in raw_text:
+                        chunks = []
+                        for line in raw_text.splitlines():
+                            line = line.strip()
+                            if line.startswith("data:"):
+                                chunk_str = line[5:].strip()
+                                if chunk_str and chunk_str != "[DONE]":
+                                    try:
+                                        c_data = json.loads(chunk_str)
+                                        choices = c_data.get("choices", [])
+                                        if choices:
+                                            delta = choices[0].get("delta", {})
+                                            if "content" in delta and delta["content"]:
+                                                chunks.append(delta["content"])
+                                            elif "text" in choices[0] and choices[0]["text"]:
+                                                chunks.append(choices[0]["text"])
+                                            elif "message" in choices[0] and choices[0]["message"].get("content"):
+                                                chunks.append(choices[0]["message"]["content"])
+                                    except Exception:
+                                        pass
+                        if chunks:
+                            return "".join(chunks)
+
+                    # Standard JSON response
+                    try:
+                        data = json.loads(raw_text)
+                        choices = data.get("choices", [])
+                        if choices:
+                            return choices[0].get("message", {}).get("content")
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.debug(f"LLM model {model} attempt failed: {e}")
                 continue
 
         logger.info(f"LLM at {url} timed out or unavailable; seamlessly falling back to high-grade quantitative tactical analysis.")
         return None
+
+    def test_connection(self) -> Dict[str, Any]:
+        """
+        Actively tests connection to 9Router on port 20128 and verifies chat completion.
+        """
+        if not self._is_active:
+            return {
+                "connected": False,
+                "base_url": self.base_url,
+                "model": self.model_name,
+                "message": "AI API Key not configured in .env"
+            }
+
+        t0 = time.time()
+        try:
+            res = self._call_llm(
+                prompt="Respond strictly with the single word 'CONNECTED'.",
+                system_prompt="You are a system health probe.",
+                temperature=0.0
+            )
+            elapsed = round(time.time() - t0, 2)
+            if res and "CONNECTED" in res.upper():
+                return {
+                    "connected": True,
+                    "base_url": self.base_url,
+                    "model": self.model_name,
+                    "latency_sec": elapsed,
+                    "sample_response": res.strip(),
+                    "message": f"9Router AI Active (Model: {self.model_name}, Latency: {elapsed}s)"
+                }
+            elif res:
+                return {
+                    "connected": True,
+                    "base_url": self.base_url,
+                    "model": self.model_name,
+                    "latency_sec": elapsed,
+                    "sample_response": res.strip()[:60],
+                    "message": f"9Router AI Active (Model: {self.model_name}, Latency: {elapsed}s)"
+                }
+            else:
+                return {
+                    "connected": False,
+                    "base_url": self.base_url,
+                    "model": self.model_name,
+                    "latency_sec": elapsed,
+                    "message": f"9Router port reached but no completion received; using Dixon-Coles Poisson Engine."
+                }
+        except Exception as e:
+            return {
+                "connected": False,
+                "base_url": self.base_url,
+                "model": self.model_name,
+                "error": str(e),
+                "message": f"9Router probe failed ({e}); using Dixon-Coles Poisson Engine."
+            }
 
     def guide_match_search(self, target_home: str, target_away: str, candidates: List[str]) -> Optional[str]:
         """
@@ -304,23 +392,27 @@ Return JSON strictly with these exact keys:
         if mo_bet:
             alt_options.append({"option": mo_bet, "market_type": "Specialized Platform", "rationale": "Recommended by MatchOutlook consensus"})
         if multi_markets:
-            sh = multi_markets.get("second_half", {})
-            if "Under 2.5" in sh and sh["Under 2.5"].get("prob", 0) > 0.80:
-                alt_options.append({"option": "2nd Half Under 2.5", "market_type": "2nd Half Goals", "rationale": f"High probability anchor ({sh['Under 2.5']['prob']*100:.0f}% win rate)"})
-            fh = multi_markets.get("first_half", {})
-            if "Over 0.5" in fh and fh["Over 0.5"].get("prob", 0) > 0.70:
-                alt_options.append({"option": "1st Half Over 0.5", "market_type": "1st Half Goals", "rationale": f"Early goal momentum ({fh['Over 0.5']['prob']*100:.0f}% chance)"})
             dc = multi_markets.get("double_chance", {})
             if "1X (Home/Draw)" in dc and dc["1X (Home/Draw)"]["prob"] > 0.65:
                 alt_options.append({"option": "1X (Home/Draw)", "market_type": "Double Chance", "rationale": f"High safety margin ({dc['1X (Home/Draw)']['prob']*100:.0f}% probability)"})
+            elif "X2 (Away/Draw)" in dc and dc["X2 (Away/Draw)"]["prob"] > 0.65:
+                alt_options.append({"option": "X2 (Away/Draw)", "market_type": "Double Chance", "rationale": f"Away/Draw safety cover ({dc['X2 (Away/Draw)']['prob']*100:.0f}% probability)"})
             tot = multi_markets.get("totals", {})
             if "Over 1.5" in tot and tot["Over 1.5"]["prob"] > 0.70:
                 alt_options.append({"option": "Over 1.5 Goals", "market_type": "Totals", "rationale": f"Strong offensive expectation ({tot['Over 1.5']['prob']*100:.0f}% probability)"})
+            elif "Under 3.5" in tot and tot["Under 3.5"]["prob"] > 0.72:
+                alt_options.append({"option": "Under 3.5 Goals", "market_type": "Totals", "rationale": f"Solid defensive buffer ({tot['Under 3.5']['prob']*100:.0f}% probability)"})
+            fh = multi_markets.get("first_half", {})
+            if "Over 0.5" in fh and fh["Over 0.5"].get("prob", 0) > 0.70:
+                alt_options.append({"option": "1st Half Over 0.5", "market_type": "1st Half Goals", "rationale": f"Early goal momentum ({fh['Over 0.5']['prob']*100:.0f}% chance)"})
             ah = multi_markets.get("asian_handicap", {})
             if "Home +0.5" in ah and ah["Home +0.5"]["prob"] > 0.60:
                 alt_options.append({"option": "Home +0.5", "market_type": "Asian Handicap", "rationale": f"Covers win or draw ({ah['Home +0.5']['prob']*100:.0f}% probability)"})
             elif "Away +0.5" in ah and ah["Away +0.5"]["prob"] > 0.60:
                 alt_options.append({"option": "Away +0.5", "market_type": "Asian Handicap", "rationale": f"Covers away win or draw ({ah['Away +0.5']['prob']*100:.0f}% probability)"})
+            sh = multi_markets.get("second_half", {})
+            if "Over 0.5" in sh and sh["Over 0.5"].get("prob", 0) > 0.75:
+                alt_options.append({"option": "2nd Half Over 0.5", "market_type": "2nd Half Goals", "rationale": f"Second half action expected ({sh['Over 0.5']['prob']*100:.0f}% probability)"})
 
         # Dynamic tactical breakdown based on specific odds, H2H, and table motivation
         h2h_label = h2h_data.get("dominance_label", "Balanced Rivalry")

@@ -628,12 +628,16 @@ class MatchPredictor:
             viable_top = bookable_options
         top_pick = sorted(viable_top, key=lambda x: x["score"], reverse=True)[0]
 
-        # Sort for Safe Pick (Double Chance, Over 1.5, Under 3.5, 1st/2nd Half O/U, DNB with highest probability & odds >= 1.16)
+        # Sort for Safe Pick (prioritizes mainstream safe markets: DC, 1UP, Over 1.5, Under 3.5, DNB, 1st Half)
+        def safe_rank_key(o):
+            pref_bonus = 0.14 if o["pick"] in ("1X", "X2", "Home (1UP)", "Away (1UP)", "Over 1.5", "Under 3.5", "Home DNB", "Away DNB", "1st Half Over 0.5") else 0.0
+            return (o["prob"] + pref_bonus, o["edge_pct"])
+
         viable_safe = [o for o in bookable_options if o["is_safe"] and o["odds"] >= 1.16]
         if not viable_safe:
             viable_safe = sorted(bookable_options, key=lambda x: x["prob"], reverse=True)
         else:
-            viable_safe = sorted(viable_safe, key=lambda x: (x["prob"], x["edge_pct"]), reverse=True)
+            viable_safe = sorted(viable_safe, key=safe_rank_key, reverse=True)
         safe_pick = viable_safe[0]
 
         # Sort for Value Pick (Highest positive EV with prob >= 40%)

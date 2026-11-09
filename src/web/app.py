@@ -73,6 +73,27 @@ async def startup_event():
     create_templates()
     # Pre-warm statistics aggregator in background
     asyncio.create_task(get_stats_aggregator().refresh_if_needed())
+    # Perform non-blocking background probe of 9Router
+    async def _probe_ai():
+        try:
+            probe = await asyncio.to_thread(get_ai_agent().test_connection)
+            if probe.get("connected"):
+                logger.info(f"9Router AI Engine: ACTIVE ({probe.get('model')} - Latency: {probe.get('latency_sec')}s)")
+            else:
+                logger.info(f"9Router AI Engine: OFFLINE ({probe.get('message')}) - Quantitative Fallback Active")
+        except Exception as e:
+            logger.debug(f"AI probe notice: {e}")
+    asyncio.create_task(_probe_ai())
+
+
+@app.get("/api/health/ai", response_class=JSONResponse)
+async def api_health_ai():
+    """Returns real-time health probe for 9Router port 20128 and active AI model."""
+    try:
+        probe = await asyncio.to_thread(get_ai_agent().test_connection)
+        return probe
+    except Exception as e:
+        return {"connected": False, "error": str(e), "message": "Failed to query AI engine"}
 
 
 @app.get("/", response_class=HTMLResponse)

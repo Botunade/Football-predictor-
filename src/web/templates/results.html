@@ -156,9 +156,11 @@
                         <span class="badge bg-primary px-3 py-1">SLIP REPORT</span>
                         <h2 class="fw-bold mb-0 text-white">{{ result.code }}</h2>
                     </div>
-                    <p class="text-secondary small mb-0">
-                        <i class="bi bi-clock-history me-1"></i> Generated: {{ result.analysis_time[:19].replace('T', ' ') }} UTC &bull; 
-                        5 External Scrapers &bull; Multi-Market Poisson Distribution &bull; 9Router Claude-Sonnet-5
+                    <p class="text-secondary small mb-0 d-flex align-items-center flex-wrap gap-2">
+                        <span><i class="bi bi-clock-history me-1"></i> Generated: {{ result.analysis_time[:19].replace('T', ' ') }} UTC &bull; 5 External Scrapers</span>
+                        <span id="resultsAiBadge" class="badge bg-dark border border-secondary px-2 py-1" style="font-size: 0.75rem;">
+                            <i class="bi bi-cpu-fill text-warning me-1"></i> 9Router Checking...
+                        </span>
                     </p>
                 </div>
                 <div class="d-flex align-items-center gap-2">
@@ -1262,10 +1264,28 @@
             }
         }
 
-        // On page load, fetch live balance, compute recommended odds, and auto-generate booking code for recommended selections
+        // On page load, fetch live balance, compute recommended odds, probe AI status, and auto-generate booking code
         document.addEventListener('DOMContentLoaded', () => {
             onRecSelectionChange();
             refreshSportyBalance(false);
+
+            fetch('/api/health/ai')
+                .then(r => r.json())
+                .then(d => {
+                    const b = document.getElementById('resultsAiBadge');
+                    if (b) {
+                        if (d.connected) {
+                            b.className = 'badge bg-dark border border-success px-2 py-1 text-white';
+                            b.innerHTML = `<i class="bi bi-check-circle-fill text-success me-1"></i> 9Router AI Active (${d.model})`;
+                            b.title = d.message;
+                        } else {
+                            b.className = 'badge bg-dark border border-warning px-2 py-1 text-warning';
+                            b.innerHTML = `<i class="bi bi-calculator text-warning me-1"></i> Dixon-Coles Poisson Model`;
+                            b.title = d.message;
+                        }
+                    }
+                })
+                .catch(() => {});
 
             const matchCards = document.querySelectorAll('.match-card');
             if (matchCards.length > 0) {
