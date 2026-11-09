@@ -371,6 +371,51 @@ async def api_simulate_acca(request: Request):
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
 
+@app.get("/api/live/matches", response_class=JSONResponse)
+async def api_live_matches():
+    """Returns current active in-play matches analyzed with in-play Poisson time-decay."""
+    try:
+        try:
+            from models.live_engine import LiveBettingEngine
+        except ImportError:
+            from src.models.live_engine import LiveBettingEngine
+
+        engine = LiveBettingEngine()
+        analyses = await asyncio.to_thread(engine.scan_all_live_analyses)
+        return {
+            "success": True,
+            "total_live": len(analyses),
+            "matches": [a.to_dict() for a in analyses]
+        }
+    except Exception as e:
+        logger.error(f"Live matches API error: {e}")
+        return JSONResponse({"success": False, "message": str(e), "matches": []}, status_code=500)
+
+
+@app.post("/api/live/generate-slip", response_class=JSONResponse)
+async def api_live_generate_slip(request: Request):
+    """Generates an official SportyBet live booking code for selected live in-play picks."""
+    try:
+        body = await request.json()
+        selections = body.get("selections", [])
+        stake = float(body.get("stake", 50.0) or 50.0)
+
+        if not selections:
+            return JSONResponse({"success": False, "message": "No live selections were provided."}, status_code=400)
+
+        try:
+            from models.live_engine import LiveBettingEngine
+        except ImportError:
+            from src.models.live_engine import LiveBettingEngine
+
+        engine = LiveBettingEngine()
+        slip = await asyncio.to_thread(engine.build_live_accumulator_slip, selections, stake)
+        return JSONResponse(slip)
+    except Exception as e:
+        logger.error(f"Live generate slip error: {e}")
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+
 @app.post("/analyze-selected", response_class=HTMLResponse)
 async def analyze_selected_matches(request: Request, selected_fixtures_json: str = Form(...), source_title: str = Form("Custom Scraped Selection")):
     """Analyze a custom list of selected scraped games"""
