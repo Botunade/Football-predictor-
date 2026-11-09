@@ -2,8 +2,8 @@
 Live In-Play Betting Engine & Real-Time Sniper
 Fetches active in-play matches from SportyBet's real-time factsCenter feed,
 runs exact in-play bivariate Poisson time-decay models on live scorelines and clocks,
-evaluates value and safe picks across 1X2, Over/Under, Double Chance, and Next Goal,
-and generates instant SportyBet live booking codes.
+evaluates Game-State Asymmetry (Lead Preservation vs Desperation), Halftime Golden Windows,
+and Defensive Gridlock, and generates instant SportyBet live booking codes.
 """
 
 import json
@@ -63,6 +63,10 @@ class LiveFixtureAnalysis:
     safe_pick: LiveMarketOption
     value_pick: LiveMarketOption
     all_options: List[LiveMarketOption] = field(default_factory=list)
+    tactical_badge: str = ""
+    tactical_badge_type: str = "standard"
+    game_state_label: str = "Neutral"
+    confidence_score: int = 7
     rationale: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -83,6 +87,10 @@ class LiveFixtureAnalysis:
             "value_pick": self.value_pick.to_dict() if self.value_pick else None,
             "options_count": len(self.all_options),
             "options": [o.to_dict() for o in self.all_options[:8]],
+            "tactical_badge": self.tactical_badge,
+            "tactical_badge_type": self.tactical_badge_type,
+            "game_state_label": self.game_state_label,
+            "confidence_score": self.confidence_score,
             "rationale": self.rationale
         }
 
@@ -90,6 +98,7 @@ class LiveFixtureAnalysis:
 class LiveBettingEngine:
     """
     Core engine for querying, analyzing, and betting on live in-play football matches.
+    Incorporates Game-State Asymmetry, Halftime Golden Windows, and Late-Game Gridlock.
     """
 
     SPORTY_LIVE_FEED_URL = "https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1"
@@ -174,8 +183,8 @@ class LiveBettingEngine:
 
     def analyze_live_match(self, ev: Dict[str, Any]) -> Optional[LiveFixtureAnalysis]:
         """
-        Analyzes a single live match: in-play Poisson time-decay, market evaluation,
-        and recommendation ranking.
+        Analyzes a single live match: in-play Poisson time-decay, Game-State Asymmetry,
+        Halftime Golden Windows, Defensive Gridlock, and market evaluation.
         """
         sporty_id = str(ev.get("eventId") or "").strip()
         home = str(ev.get("homeTeamName") or "").strip()
@@ -186,22 +195,81 @@ class LiveBettingEngine:
         minute, clock_str, period_desc = self._parse_match_clock(ev)
         h_score, a_score, score_str = self._parse_score(ev)
         current_total_goals = h_score + a_score
+        score_diff = h_score - a_score
 
         # Remaining match time fraction
         rem_min = max(2, 90 - minute)
         rem_fraction = rem_min / 90.0
 
-        # Dynamic live pace factor
+        # Extract pre-match/live 1X2 baseline odds to infer favored team
+        live_odds_h, live_odds_a = 2.40, 2.80
+        for m in ev.get("markets", []):
+            if str(m.get("id")) in ["1", "60200"]:
+                for o in m.get("outcomes", []):
+                    desc_low = str(o.get("desc", "")).lower()
+                    if desc_low == "home":
+                        live_odds_h = float(o.get("odds") or live_odds_h)
+                    elif desc_low == "away":
+                        live_odds_a = float(o.get("odds") or live_odds_a)
+
+        home_favored = live_odds_h <= live_odds_a
+
+        # =====================================================================
+        # METHODOLOGY 1: GAME-STATE ASYMMETRY & TACTICAL PSYCHOLOGY
+        # =====================================================================
         pace_factor = 1.0
-        if current_total_goals >= 3 and minute <= 60:
-            pace_factor = 1.20
-        elif current_total_goals == 0 and minute >= 55:
-            pace_factor = 0.88
+        tactical_badge = "Live Play"
+        tactical_badge_type = "standard"
+        game_state_label = "Balanced"
+        confidence_score = 7
+
+        # 1. Halftime Golden Window (40' to 55')
+        is_golden_window = (40 <= minute <= 55) or period_desc == "Half Time"
+        if is_golden_window:
+            tactical_badge = "⭐ Halftime Golden Window"
+            tactical_badge_type = "golden_window"
+            confidence_score = 9
+            if current_total_goals == 0:
+                game_state_label = "0-0 Halftime Breakout"
+                pace_factor = 1.14  # High probability of 2nd half goal breakthrough
+            else:
+                game_state_label = "Halftime Tactical Reset"
+
+        # 2. Favorite Desperation Chasing (Favorite trailing by 1 at 55'+)
+        elif ((home_favored and score_diff == -1) or (not home_favored and score_diff == 1)) and minute >= 55:
+            tactical_badge = "🔥 Favorite Chasing (Attack Surge)"
+            tactical_badge_type = "favorite_chasing"
+            game_state_label = "Desperation Attack"
+            pace_factor = 1.35  # Heavy offensive commitment; counter-attack concession risk
+            confidence_score = 8
+
+        # 3. Underdog Lead Preservation (Underdog leading past 70')
+        elif ((home_favored and score_diff <= -1) or (not home_favored and score_diff >= 1)) and minute >= 70:
+            tactical_badge = "🛡️ Underdog Low Block (Gridlock)"
+            tactical_badge_type = "low_block"
+            game_state_label = "Low Block Preservation"
+            pace_factor = 0.76  # Defensive time-wasting; box entries neutralized
+            confidence_score = 8
+
+        # 4. Late-Game Deadlock (Tied past 78')
+        elif score_diff == 0 and minute >= 78:
+            tactical_badge = "🔒 Late Deadlock (Risk Aversion)"
+            tactical_badge_type = "gridlock"
+            game_state_label = "Draw Consolidation"
+            pace_factor = 0.72  # Neither side risks a fatal late loss
+            confidence_score = 9
+
+        # 5. Open High-Scoring Firefight (3+ goals early)
+        elif current_total_goals >= 3 and minute <= 60:
+            tactical_badge = "⚡ High-Pace Firefight"
+            tactical_badge_type = "firefight"
+            game_state_label = "Open Transition Match"
+            pace_factor = 1.25
 
         # Expected remaining goals in the match
-        lambda_rem = max(0.06, 2.65 * rem_fraction * pace_factor)
-        lambda_h = lambda_rem * 0.55
-        lambda_a = lambda_rem * 0.45
+        lambda_rem = max(0.05, 2.65 * rem_fraction * pace_factor)
+        lambda_h = lambda_rem * (0.58 if home_favored else 0.44)
+        lambda_a = lambda_rem * (0.42 if home_favored else 0.56)
 
         def poisson_pmf(k: int, lamb: float) -> float:
             lamb = max(0.01, lamb)
@@ -268,7 +336,6 @@ class LiveBettingEngine:
                         line_val = float(spec.replace("total=", ""))
                         # Filter out already decided lines
                         if line_val <= current_total_goals:
-                            # Already has exceeded or equaled line
                             continue
 
                         additional_needed = int(math.ceil(line_val - current_total_goals))
@@ -276,26 +343,29 @@ class LiveBettingEngine:
 
                         if "over" in o_desc.lower():
                             est_prob = p_over
+                            # Safe over: 1 goal needed in high-pace game or halftime breakout
                             is_safe = (additional_needed == 1 and est_prob >= 0.70)
                         else:  # Under
                             est_prob = max(0.02, 1.0 - p_over)
+                            # Safe under: 2+ goal buffer in gridlock or late game
                             is_safe = (additional_needed >= 2 and est_prob >= 0.72)
                     except Exception:
                         continue
 
                 # 2. 1X2 Match Winner (Market 1 or 60200)
                 elif m_id in ["1", "60200"]:
+                    # In late tied games, penalize volatile 1X2 win picks; reward draw consolidation
                     if o_desc.lower() == "home":
                         est_prob = p_home_win
-                        is_safe = (est_prob >= 0.75 and odds >= 1.18)
+                        is_safe = (est_prob >= 0.78 and odds >= 1.18 and score_diff >= 1)
                     elif o_desc.lower() == "away":
                         est_prob = p_away_win
-                        is_safe = (est_prob >= 0.75 and odds >= 1.18)
+                        is_safe = (est_prob >= 0.78 and odds >= 1.18 and score_diff <= -1)
                     else:  # Draw
                         est_prob = p_draw_res
                         is_safe = (est_prob >= 0.72 and rem_min <= 15)
 
-                # 3. Double Chance (Market 10)
+                # 3. Double Chance (Market 10) - High structural integrity in-play
                 elif m_id == "10":
                     if "1x" in o_desc.lower() or "home" in o_desc.lower():
                         est_prob = p_1x
@@ -322,7 +392,6 @@ class LiveBettingEngine:
                     if both_scored:
                         continue  # Already decided
                     else:
-                        # Probability of both teams scoring
                         h_needs = max(0, 1 - h_score)
                         a_needs = max(0, 1 - a_score)
                         p_both = (1.0 - math.exp(-lambda_h)) * (1.0 - math.exp(-lambda_a)) if (h_needs and a_needs) else \
@@ -337,9 +406,10 @@ class LiveBettingEngine:
                 ev_val = (est_prob * odds) - 1.0
                 ev_pct = ev_val * 100.0
 
-                # Score: rewards high probability, playable odds (1.20 - 2.80), and positive EV
+                # Score: rewards high probability, playable odds (1.20 - 2.80), positive EV, and structural market bonus
                 playable_bonus = 0.16 if (1.24 <= odds <= 2.45) else (-0.20 if odds < 1.15 else 0.0)
-                sc = (est_prob * 0.65) + (max(-0.25, min(0.40, ev_val)) * 0.35) + playable_bonus
+                structural_bonus = 0.10 if is_safe else 0.0
+                sc = (est_prob * 0.65) + (max(-0.25, min(0.40, ev_val)) * 0.35) + playable_bonus + structural_bonus
 
                 options.append(LiveMarketOption(
                     market_id=m_id,
@@ -361,7 +431,7 @@ class LiveBettingEngine:
         options.sort(key=lambda x: x.score, reverse=True)
         top_pick = options[0]
 
-        # Safe pick (highest probability with odds >= 1.16)
+        # Safe pick (prioritizes high-integrity structural buffer markets: DC, Under buffer, Next Goal None)
         safe_candidates = [o for o in options if o.is_safe and o.odds >= 1.16]
         if not safe_candidates:
             safe_candidates = [o for o in options if o.prob >= 0.68 and o.odds >= 1.16]
@@ -375,11 +445,11 @@ class LiveBettingEngine:
             value_candidates = options
         value_pick = sorted(value_candidates, key=lambda x: (x.ev_pct, x.prob), reverse=True)[0]
 
-        # Build tactical rationale
+        # Build tactical rationale reflecting the Game-State methodology
         rationale = (
-            f"Score {score_str} at {clock_str}. With ~{rem_min}' remaining, model projects "
-            f"lambda = {lambda_rem:.2f} expected remaining goals. Top recommendation: "
-            f"{top_pick.outcome_name} ({top_pick.market_name}) at odds {top_pick.odds:.2f} "
+            f"Score {score_str} at {clock_str} [{game_state_label}]. With ~{rem_min}' remaining, "
+            f"model projects lambda = {lambda_rem:.2f} expected goals (Pace Factor: {pace_factor:.2f}x). "
+            f"Top pick: {top_pick.outcome_name} ({top_pick.market_name}) at odds {top_pick.odds:.2f} "
             f"(Win Prob: {top_pick.prob*100:.0f}%, EV: {top_pick.ev_pct:+.1f}%)."
         )
 
@@ -399,12 +469,17 @@ class LiveBettingEngine:
             safe_pick=safe_pick,
             value_pick=value_pick,
             all_options=options,
+            tactical_badge=tactical_badge,
+            tactical_badge_type=tactical_badge_type,
+            game_state_label=game_state_label,
+            confidence_score=confidence_score,
             rationale=rationale
         )
 
     def scan_all_live_analyses(self) -> List[LiveFixtureAnalysis]:
         """
         Scans all current live matches and returns analyses sorted by betting viability.
+        Prioritizes matches in Halftime Golden Windows and prime Game-State Asymmetry windows.
         """
         events = self.fetch_live_matches()
         analyses: List[LiveFixtureAnalysis] = []
@@ -417,13 +492,15 @@ class LiveBettingEngine:
             except Exception as e:
                 logger.debug(f"Live match analysis error: {e}")
 
-        # Sort analyses: matches in prime in-play betting windows (30' to 80') with high score first
+        # Sort analyses: Halftime Golden Windows and high-confidence games first
         analyses.sort(key=lambda a: (
+            1 if a.tactical_badge_type == "golden_window" else 0,
             1 if (30 <= a.minute <= 80) else 0,
+            a.confidence_score,
             a.top_pick.score
         ), reverse=True)
 
-        logger.info(f"Analyzed {len(analyses)} live in-play football matches from SportyBet.")
+        logger.info(f"Analyzed {len(analyses)} live in-play football matches from SportyBet with Game-State Asymmetry.")
         return analyses
 
     def build_live_accumulator_slip(

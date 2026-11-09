@@ -1090,14 +1090,29 @@
                     </option>`;
                 });
 
+                let badgeClass = 'badge bg-dark border border-secondary text-secondary';
+                if (m.tactical_badge_type === 'golden_window') {
+                    badgeClass = 'badge bg-warning text-dark fw-bold border border-warning shadow-sm';
+                } else if (m.tactical_badge_type === 'favorite_chasing') {
+                    badgeClass = 'badge bg-danger text-white fw-bold border border-danger shadow-sm';
+                } else if (m.tactical_badge_type === 'low_block') {
+                    badgeClass = 'badge bg-info text-dark fw-bold border border-info shadow-sm';
+                } else if (m.tactical_badge_type === 'gridlock') {
+                    badgeClass = 'badge bg-secondary text-white fw-bold border border-secondary shadow-sm';
+                } else if (m.tactical_badge_type === 'firefight') {
+                    badgeClass = 'badge bg-primary text-white fw-bold border border-primary shadow-sm';
+                }
+
                 html += `
                 <div class="live-match-card ${isSelected ? 'selected-live' : ''}" id="liveCard_${m.sporty_id}">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                        <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
                             <span class="live-clock-pill">
                                 <span class="live-dot-pulse me-1"></span> ${m.clock_str}
                             </span>
+                            <span class="${badgeClass}">${m.tactical_badge || 'Live Play'}</span>
                             <span class="badge bg-dark border border-secondary text-secondary">${m.league}</span>
+                            <span class="badge bg-dark border border-secondary text-muted" title="Live Model Confidence">Conf: ${m.confidence_score || 7}/10</span>
                         </div>
                         <div class="live-score-badge">
                             ${m.home_score} : ${m.away_score}
