@@ -37,7 +37,7 @@ class AutomationManager:
     - Coordinates with SportyBetAutomator for browser execution
     """
 
-    def __init__(self, max_stake_cap: float = 50.0):
+    def __init__(self, max_stake_cap: float = 1000000.0):
         self.max_stake_cap = max_stake_cap
         self.phone = os.getenv("SPORTY_PHONE", "")
         self.password = os.getenv("SPORTY_PASSWORD", "")

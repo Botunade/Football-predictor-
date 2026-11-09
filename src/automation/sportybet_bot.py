@@ -805,10 +805,60 @@ class SportyBetAutomator:
             return 0.0
 
     @staticmethod
+    def map_selection_to_sporty_market(pick_str: str) -> Tuple[str, str, str]:
+        """
+        Maps any human-readable betting pick to SportyBet's official (marketId, outcomeId, specifier).
+        Supported markets:
+        - 1X2 (Home, Draw, Away) -> marketId='1'
+        - Double Chance (1X, 12, X2) -> marketId='10'
+        - Over/Under (Over/Under 0.5, 1.5, 2.5, 3.5, 4.5) -> marketId='18'
+        - GG/NG (BTTS Yes, BTTS No) -> marketId='29'
+        - Draw No Bet (Home DNB, Away DNB) -> marketId='11'
+        """
+        p = str(pick_str or "Home").lower().strip()
+
+        # Double Chance (Market 10)
+        if p in ("1x", "1x (home/draw)", "1x (home or draw)", "home or draw", "home/draw"):
+            return ("10", "9", "")
+        if p in ("12", "12 (home/away)", "12 (home or away)", "home or away", "home/away"):
+            return ("10", "10", "")
+        if p in ("x2", "x2 (draw/away)", "x2 (away/draw)", "x2 (draw or away)", "draw or away", "away or draw"):
+            return ("10", "11", "")
+
+        # Draw No Bet (Market 11)
+        if "dnb" in p or "draw no bet" in p:
+            if "away" in p or "2" in p:
+                return ("11", "5", "")
+            return ("11", "4", "")
+
+        # Both Teams To Score / GG/NG (Market 29)
+        if "btts" in p or p in ("gg", "ng", "both teams to score"):
+            if "no" in p or p == "ng":
+                return ("29", "76", "")
+            return ("29", "74", "")
+
+        # Over / Under Goals (Market 18)
+        if "over" in p or "under" in p:
+            is_over = "over" in p
+            outcome_id = "12" if is_over else "13"
+            for line in ("0.5", "1.5", "2.5", "3.5", "4.5"):
+                if line in p:
+                    return ("18", outcome_id, f"total={line}")
+            return ("18", outcome_id, "total=2.5")
+
+        # 1X2 Match Winner (Market 1)
+        if p in ("away", "2", "away (2)"):
+            return ("1", "3", "")
+        if p in ("draw", "x", "draw (x)"):
+            return ("1", "2", "")
+        return ("1", "1", "")
+
+    @staticmethod
     def generate_booking_code_via_api(matches: List[Dict[str, Any]]) -> Optional[str]:
         """
-        Directly posts distinct match selections (eventId + outcomeId) to SportyBet's
-        official /api/ng/orders/share endpoint.
+        Directly posts distinct match selections (eventId + marketId + outcomeId + specifier)
+        to SportyBet's official /api/ng/orders/share endpoint.
+        Supports 1X2, Double Chance (1X/12/X2), Over/Under (0.5..4.5), BTTS (GG/NG), and Draw No Bet (DNB).
         Executes in < 1 second, requires no headless browser, never clicks wrong DOM elements,
         and guarantees 1 outcome per match so accumulator mode ('Multiple') is always preserved.
         """
@@ -830,7 +880,7 @@ class SportyBetAutomator:
             event_id = str(m.get("sporty_id") or m.get("fixture", {}).get("sporty_id") or "").strip()
             home = str(m.get("home_team") or "").strip()
             away = str(m.get("away_team") or "").strip()
-            pick_raw = str(m.get("selected_outcome") or "Home").lower().strip()
+            pick_raw = str(m.get("selected_outcome") or m.get("recommended_outcome") or "Home").strip()
 
             if not event_id and agg and (home or away):
                 sb_match = agg.find_sportybet_match(home, away)
@@ -840,19 +890,14 @@ class SportyBetAutomator:
             if not event_id or not event_id.startswith("sr:match:") or event_id in seen_events:
                 continue
 
-            if pick_raw in ("away", "2", "x2"):
-                outcome_id = "3"
-            elif pick_raw in ("draw", "x"):
-                outcome_id = "2"
-            else:
-                outcome_id = "1"
+            market_id, outcome_id, specifier = SportyBetAutomator.map_selection_to_sporty_market(pick_raw)
 
             seen_events.add(event_id)
             selections.append({
                 "eventId": event_id,
-                "marketId": "1",
+                "marketId": market_id,
                 "outcomeId": outcome_id,
-                "specifier": ""
+                "specifier": specifier
             })
 
         # Supplement from live SportyBet cache if any requested matches lacked a sporty_id

@@ -8,8 +8,8 @@ import asyncio
 import json
 import logging
 import urllib.request
-from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, field, asdict
+from typing import Dict, List, Optional, Any, Tuple
 
 from playwright.async_api import async_playwright, Browser, BrowserContext
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SportyBetFixtureOdds:
-    """Live match odds extracted from SportyBet"""
+    """Live match odds extracted from SportyBet (1X2 + Multi-Market)"""
     home_team: str
     away_team: str
     league: str = "Football"
@@ -27,6 +27,7 @@ class SportyBetFixtureOdds:
     odds_away: float = 0.0
     match_time: str = ""
     sporty_id: str = ""
+    market_odds: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -169,11 +170,84 @@ class SportyBetOddsScraper:
 
         return fixtures
 
+    @staticmethod
+    def _parse_event_markets(ev: Dict[str, Any]) -> Tuple[float, float, float, Dict[str, float]]:
+        """Extracts 1X2 and multi-market odds (DC, Over/Under, GG/NG, DNB) from a SportyBet event payload."""
+        h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
+        m_odds: Dict[str, float] = {}
+
+        for m in ev.get("markets", []):
+            m_id = str(m.get("id", ""))
+            spec = str(m.get("specifier") or "")
+            outcomes = m.get("outcomes", [])
+
+            if m_id == "1":  # 1X2
+                for o in outcomes:
+                    o_id = str(o.get("id", ""))
+                    val = float(o.get("odds") or 0.0)
+                    if val <= 1.0:
+                        continue
+                    if o_id == "1":
+                        h_odd = val
+                        m_odds["Home"] = val
+                    elif o_id == "2":
+                        d_odd = val
+                        m_odds["Draw"] = val
+                    elif o_id == "3":
+                        a_odd = val
+                        m_odds["Away"] = val
+            elif m_id == "10":  # Double Chance
+                for o in outcomes:
+                    o_id = str(o.get("id", ""))
+                    val = float(o.get("odds") or 0.0)
+                    if val <= 1.0:
+                        continue
+                    if o_id == "9":
+                        m_odds["1X"] = val
+                    elif o_id == "10":
+                        m_odds["12"] = val
+                    elif o_id == "11":
+                        m_odds["X2"] = val
+            elif m_id == "18":  # Over/Under
+                if spec in ("total=1.5", "total=2.5", "total=3.5"):
+                    line = spec.split("=")[1]
+                    for o in outcomes:
+                        o_id = str(o.get("id", ""))
+                        val = float(o.get("odds") or 0.0)
+                        if val <= 1.0:
+                            continue
+                        if o_id == "12":
+                            m_odds[f"Over {line}"] = val
+                        elif o_id == "13":
+                            m_odds[f"Under {line}"] = val
+            elif m_id == "29":  # GG/NG (BTTS)
+                for o in outcomes:
+                    o_id = str(o.get("id", ""))
+                    val = float(o.get("odds") or 0.0)
+                    if val <= 1.0:
+                        continue
+                    if o_id == "74":
+                        m_odds["BTTS Yes"] = val
+                    elif o_id == "76":
+                        m_odds["BTTS No"] = val
+            elif m_id == "11":  # Draw No Bet
+                for o in outcomes:
+                    o_id = str(o.get("id", ""))
+                    val = float(o.get("odds") or 0.0)
+                    if val <= 1.0:
+                        continue
+                    if o_id == "4":
+                        m_odds["Home DNB"] = val
+                    elif o_id == "5":
+                        m_odds["Away DNB"] = val
+
+        return h_odd, d_odd, a_odd, m_odds
+
     def _scrape_via_api(self) -> List[SportyBetFixtureOdds]:
         """
         High-scale SportyBet official API extraction.
         Queries multiple pages of upcoming events and live prematch events,
-        yielding 500+ real 1X2 bookmaker odds with exact event IDs.
+        yielding 500+ real 1X2 and Multi-Market bookmaker odds with exact event IDs.
         """
         import time
         results: List[SportyBetFixtureOdds] = []
@@ -207,19 +281,7 @@ class SportyBetOddsScraper:
                         if pair_key in seen_keys:
                             continue
 
-                        h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
-                        for m in ev.get("markets", []):
-                            desc = m.get("desc", "").lower()
-                            if "1x2" in desc or m.get("id") == "1":
-                                for o in m.get("outcomes", []):
-                                    d_desc = o.get("desc", "").lower()
-                                    val = float(o.get("odds", 0.0))
-                                    if d_desc == "1" or "home" in d_desc:
-                                        h_odd = val
-                                    elif d_desc == "x" or "draw" in d_desc:
-                                        d_odd = val
-                                    elif d_desc == "2" or "away" in d_desc:
-                                        a_odd = val
+                        h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
 
                         if h_odd > 1.0 and a_odd > 1.0:
                             seen_keys.add(pair_key)
@@ -230,7 +292,8 @@ class SportyBetOddsScraper:
                                 odds_home=h_odd,
                                 odds_draw=d_odd,
                                 odds_away=a_odd,
-                                sporty_id=str(ev.get("eventId", ""))
+                                sporty_id=str(ev.get("eventId", "")),
+                                market_odds=m_odds
                             ))
             except Exception as e:
                 logger.debug(f"Error fetching SportyBet upcoming page {page_num}: {e}")
@@ -257,19 +320,7 @@ class SportyBetOddsScraper:
                     if pair_key in seen_keys:
                         continue
 
-                    h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
-                    for m in ev.get("markets", []):
-                        desc = m.get("desc", "").lower()
-                        if "1x2" in desc or m.get("id") == "1":
-                            for o in m.get("outcomes", []):
-                                d_desc = o.get("desc", "").lower()
-                                val = float(o.get("odds", 0.0))
-                                if d_desc == "1" or "home" in d_desc:
-                                    h_odd = val
-                                elif d_desc == "x" or "draw" in d_desc:
-                                    d_odd = val
-                                elif d_desc == "2" or "away" in d_desc:
-                                    a_odd = val
+                    h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
 
                     if h_odd > 1.0 and a_odd > 1.0:
                         seen_keys.add(pair_key)
@@ -280,7 +331,8 @@ class SportyBetOddsScraper:
                             odds_home=h_odd,
                             odds_draw=d_odd,
                             odds_away=a_odd,
-                            sporty_id=str(ev.get("eventId", ""))
+                            sporty_id=str(ev.get("eventId", "")),
+                            market_odds=m_odds
                         ))
         except Exception as e:
             logger.debug(f"Error fetching SportyBet live events timeline=24: {e}")

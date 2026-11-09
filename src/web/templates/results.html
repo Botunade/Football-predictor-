@@ -235,40 +235,211 @@
             </div>
         </div>
 
+        <!-- AI Recommended Selections & Multi-Market Slip Builder -->
+        <div class="card p-4 mb-4 rounded" style="background: linear-gradient(135deg, #0f172a 0%, #172554 100%); border: 1px solid #38bdf8;">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-info text-dark fw-bold px-2 py-1"><i class="bi bi-stars me-1"></i>AI MULTI-MARKET RECOMMENDER</span>
+                        <h5 class="fw-bold mb-0 text-white">Recommended Selections &amp; Custom Slip Builder</h5>
+                    </div>
+                    <p class="small text-secondary mb-0">
+                        Switch between <strong>AI Best Multi-Market Picks</strong> (1X2, Double Chance 1X/X2, Over/Under 1.5 &amp; 2.5, BTTS GG/NG, Draw No Bet), choose how many games to include, and generate your playable SportyBet code.
+                    </p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-info btn-sm fw-bold text-dark" onclick="applyRecommendationPreset('top')">
+                        <i class="bi bi-stars me-1"></i> AI Top Picks
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm fw-bold" onclick="applyRecommendationPreset('safe')">
+                        <i class="bi bi-shield-fill-check me-1"></i> Safe Picks (1X / Over 1.5 / DNB)
+                    </button>
+                    <button type="button" class="btn btn-outline-warning btn-sm fw-bold" onclick="applyRecommendationPreset('value')">
+                        <i class="bi bi-lightning-charge-fill me-1"></i> Value (+EV) Picks
+                    </button>
+                    <button type="button" class="btn btn-outline-light btn-sm" onclick="applyRecommendationPreset('original')">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> Original Picks
+                    </button>
+                </div>
+            </div>
+
+            <!-- Number of Games to Stake Quick Selector -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 p-2 rounded" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255,255,255,0.08);">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="small text-info fw-bold"><i class="bi bi-list-check me-1"></i>Games to Stake:</span>
+                    <button type="button" class="btn btn-xs btn-outline-light py-0 px-2 small" onclick="selectTopConfidenceGames(999)">All ({{ result.predictions|length }})</button>
+                    {% if result.predictions|length >= 2 %}
+                    <button type="button" class="btn btn-xs btn-outline-info py-0 px-2 small" onclick="selectTopConfidenceGames(2)">Top 2</button>
+                    {% endif %}
+                    {% if result.predictions|length >= 3 %}
+                    <button type="button" class="btn btn-xs btn-outline-info py-0 px-2 small" onclick="selectTopConfidenceGames(3)">Top 3</button>
+                    {% endif %}
+                    {% if result.predictions|length >= 5 %}
+                    <button type="button" class="btn btn-xs btn-outline-info py-0 px-2 small" onclick="selectTopConfidenceGames(5)">Top 5</button>
+                    {% endif %}
+                    <span class="small text-secondary ms-2">Selected: <strong class="text-white" id="recSelectedCount">{{ result.predictions|length }}</strong> games</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="small text-secondary">Recommended Slip Odds: <strong class="text-warning fs-6" id="recCombinedOdds">--</strong></span>
+                    <span class="small text-secondary">Est. Return: <strong class="text-success fs-6" id="recEstPayout">--</strong></span>
+                </div>
+            </div>
+
+            <div class="table-responsive mb-3">
+                <table class="table table-dark table-hover align-middle mb-0 small" style="border-color: #1e293b;">
+                    <thead>
+                        <tr class="text-secondary text-uppercase" style="font-size: 0.75rem;">
+                            <th style="width: 42px;">Play</th>
+                            <th>Fixture</th>
+                            <th>Original Pick</th>
+                            <th>AI Top Recommendation</th>
+                            <th>Safe Alternative</th>
+                            <th style="min-width: 240px;">Active Market Selection to Bet</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in result.predictions %}
+                        {% set match = item.match %}
+                        {% set mm = item.prediction.multi_markets if item.prediction and item.prediction.multi_markets else {} %}
+                        {% set rec_m = mm.recommended_markets if mm and mm.recommended_markets else {} %}
+                        {% set top_p = rec_m.top_pick if rec_m and rec_m.top_pick else {'pick': match.selected_outcome or 'Home', 'label': match.selected_outcome or 'Home', 'odds': match.selected_odds or 1.85, 'prob_pct': 60.0} %}
+                        {% set safe_p = rec_m.safe_pick if rec_m and rec_m.safe_pick else {'pick': '1X', 'label': 'Double Chance: 1X', 'odds': 1.32, 'prob_pct': 75.0} %}
+                        {% set val_p = rec_m.value_pick if rec_m and rec_m.value_pick else top_p %}
+                        {% set opts = rec_m.bookable_options if rec_m and rec_m.bookable_options else [] %}
+                        {% set ai = item.ai_analysis if item.ai_analysis else {} %}
+                        {% set conf = ai.confidence_score or 6 %}
+                        <tr class="rec-builder-row"
+                            data-idx="{{ loop.index0 }}"
+                            data-home="{{ match.home_team }}"
+                            data-away="{{ match.away_team }}"
+                            data-sporty-id="{{ match.sporty_id or '' }}"
+                            data-conf="{{ conf }}"
+                            data-orig-pick="{{ match.selected_outcome or 'Home' }}"
+                            data-orig-odds="{{ match.selected_odds or match.odds_home or 2.0 }}"
+                            data-top-pick="{{ top_p.pick }}"
+                            data-top-odds="{{ top_p.odds }}"
+                            data-safe-pick="{{ safe_p.pick }}"
+                            data-safe-odds="{{ safe_p.odds }}"
+                            data-value-pick="{{ val_p.pick }}"
+                            data-value-odds="{{ val_p.odds }}">
+                            <td>
+                                <input type="checkbox" class="form-check-input rec-match-chk" checked onchange="onRecSelectionChange()">
+                            </td>
+                            <td>
+                                <div class="fw-bold text-white">{{ match.home_team }} <span class="text-secondary fw-normal">vs</span> {{ match.away_team }}</div>
+                                <div class="text-secondary" style="font-size: 0.72rem;">{{ match.league or 'Football' }} &bull; AI Conf: <span class="text-info fw-bold">{{ conf }}/10</span></div>
+                            </td>
+                            <td>
+                                <span class="badge bg-dark border border-secondary text-light">{{ match.selected_outcome or 'Home' }} @ {{ match.selected_odds or match.odds_home or '2.00' }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-primary bg-opacity-25 border border-primary text-info fw-bold px-2 py-1">
+                                    <i class="bi bi-stars me-1"></i>{{ top_p.pick }} @ {{ top_p.odds }} ({{ top_p.prob_pct }}%)
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-success bg-opacity-25 border border-success text-success fw-bold px-2 py-1">
+                                    <i class="bi bi-shield-check me-1"></i>{{ safe_p.pick }} @ {{ safe_p.odds }} ({{ safe_p.prob_pct }}%)
+                                </span>
+                            </td>
+                            <td>
+                                <select class="form-select form-select-sm bg-dark border-info text-white fw-bold rec-market-select" onchange="onRecSelectionChange()">
+                                    {% if opts %}
+                                        {% for o in opts %}
+                                        <option value="{{ o.pick }}" data-odds="{{ o.odds }}" data-prob="{{ o.prob_pct }}" {% if o.pick == top_p.pick %}selected{% endif %}>
+                                            {{ o.label }} @ {{ o.odds }} ({{ o.prob_pct }}%)
+                                        </option>
+                                        {% endfor %}
+                                    {% else %}
+                                        <option value="{{ top_p.pick }}" data-odds="{{ top_p.odds }}" selected>{{ top_p.pick }} @ {{ top_p.odds }}</option>
+                                        <option value="Home" data-odds="{{ match.odds_home or 2.0 }}">1X2: Home (1) @ {{ match.odds_home or 2.0 }}</option>
+                                        <option value="Draw" data-odds="{{ match.odds_draw or 3.2 }}">1X2: Draw (X) @ {{ match.odds_draw or 3.2 }}</option>
+                                        <option value="Away" data-odds="{{ match.odds_away or 3.1 }}">1X2: Away (2) @ {{ match.odds_away or 3.1 }}</option>
+                                        <option value="1X" data-odds="1.34">Double Chance: 1X @ 1.34</option>
+                                        <option value="X2" data-odds="1.45">Double Chance: X2 @ 1.45</option>
+                                        <option value="Over 1.5" data-odds="1.30">Goals: Over 1.5 @ 1.30</option>
+                                        <option value="Over 2.5" data-odds="1.85">Goals: Over 2.5 @ 1.85</option>
+                                        <option value="Under 3.5" data-odds="1.32">Goals: Under 3.5 @ 1.32</option>
+                                        <option value="BTTS Yes" data-odds="1.78">BTTS: Yes (GG) @ 1.78</option>
+                                        <option value="Home DNB" data-odds="1.55">Draw No Bet: Home DNB @ 1.55</option>
+                                        <option value="Away DNB" data-odds="1.85">Draw No Bet: Away DNB @ 1.85</option>
+                                    {% endif %}
+                                </select>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="small text-secondary">
+                    <i class="bi bi-check2-all text-info me-1"></i> Supports <strong>1X2, Double Chance (1X/X2/12), Over/Under (1.5, 2.5, 3.5), BTTS (GG/NG), and Draw No Bet</strong> directly on SportyBet.
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-warning btn-sm fw-bold px-3 py-2" onclick="generateSportyCodeNow()">
+                        <i class="bi bi-qr-code-scan me-1"></i> Generate Recommended Bet Code
+                    </button>
+                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 py-2" onclick="generateAndPlayRecommended(false)">
+                        <i class="bi bi-lightning-charge-fill me-1"></i> Generate Code &amp; Place Bet Now
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- SportyBet Automation Hub Card -->
         <div class="card p-3 mb-4 rounded" style="background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%); border: 1px solid #6366f1;">
             <div class="row align-items-center g-3">
-                <div class="col-lg-5 col-12">
+                <div class="col-lg-4 col-12">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <span class="badge bg-primary px-2 py-1">AUTOMATION ENGINE</span>
                         <h5 class="fw-bold mb-0 text-white"><i class="bi bi-robot text-info me-1"></i> SportyBet Auto-Bet Hub</h5>
                     </div>
                     <div class="small text-secondary mb-1">
-                        Patron Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success" id="sportyBalanceSpan">NGN 70.93</strong> <button class="btn btn-outline-success btn-sm py-0 px-1 ms-1" style="font-size: 0.72rem; line-height: 1;" title="Refresh live balance from SportyBet" onclick="refreshSportyBalance(true)"><i class="bi bi-arrow-clockwise" id="balRefreshIcon"></i></button> &bull; Stake: <strong class="text-warning">10.00 NGN</strong>
+                        Account: <strong class="text-white">815****422 (Boluwatife Adesoji)</strong> &bull; Balance: <strong class="text-success" id="sportyBalanceSpan">NGN 70.93</strong>
+                        <button class="btn btn-outline-success btn-sm py-0 px-1 ms-1" style="font-size: 0.72rem; line-height: 1;" title="Refresh live balance from SportyBet" onclick="refreshSportyBalance(true)"><i class="bi bi-arrow-clockwise" id="balRefreshIcon"></i></button>
                     </div>
                     <div class="small text-muted fst-italic">
-                        <i class="bi bi-info-circle me-1"></i> Sequence: Load Betslip &bull; Verify Odds &bull; Auth 815****422 &bull; Place Wager
+                        <i class="bi bi-info-circle me-1"></i> Books selected multi-market picks &bull; Verifies Multiple tab &bull; Places wager
                     </div>
                 </div>
 
-                <div class="col-lg-3 col-12">
-                    <label class="small text-secondary fw-bold text-uppercase mb-1">SportyBet Booking Code</label>
+                <!-- Custom Stake Input (Any NGN Amount) -->
+                <div class="col-lg-3 col-md-6 col-12">
+                    <label class="small text-secondary fw-bold text-uppercase mb-1">Stake Amount (NGN) — Any Amount</label>
                     <div class="input-group input-group-sm mb-1">
-                        <span class="input-group-text bg-dark border-secondary text-info"><i class="bi bi-ticket-perforated"></i></span>
-                        <input type="text" id="autoBookingCode" class="form-control bg-dark border-secondary text-white text-uppercase fw-bold" placeholder="e.g. X1XUKH, LEA2BS" value="{% if result.code|length <= 10 and not ' ' in result.code %}{{ result.code }}{% endif %}">
+                        <span class="input-group-text bg-dark border-secondary text-warning fw-bold">NGN</span>
+                        <input type="number" id="customStakeInput" class="form-control bg-dark border-secondary text-white fw-bold" min="10" step="10" value="10" oninput="onStakeAmountChange()">
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(10)">10</button>
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(50)">50</button>
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(100)">100</button>
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(200)">200</button>
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(500)">500</button>
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="setCustomStake(1000)">1,000</button>
+                    </div>
+                </div>
+
+                <!-- SportyBet Booking Code -->
+                <div class="col-lg-2 col-md-6 col-12">
+                    <label class="small text-secondary fw-bold text-uppercase mb-1">Booking Code</label>
+                    <div class="input-group input-group-sm mb-1">
+                        <input type="text" id="autoBookingCode" class="form-control bg-dark border-secondary text-warning text-uppercase fw-bold" placeholder="Code..." value="{% if result.code|length <= 10 and not ' ' in result.code %}{{ result.code }}{% endif %}">
                         <button class="btn btn-outline-secondary" type="button" title="Copy Code" onclick="copyBookingCode()"><i class="bi bi-clipboard"></i></button>
                     </div>
-                    <button class="btn btn-warning btn-sm fw-bold w-100 py-1" id="btnGenCode" onclick="generateSportyCodeNow()" style="font-size: 0.78rem;">
-                        <i class="bi bi-qr-code me-1"></i> Generate SportyBet Code
+                    <button class="btn btn-warning btn-sm fw-bold w-100 py-1" id="btnGenCode" onclick="generateSportyCodeNow()" style="font-size: 0.75rem;">
+                        <i class="bi bi-qr-code me-1"></i> Sync Code
                     </button>
                 </div>
 
-                <div class="col-lg-4 col-12 d-flex gap-2 align-items-end justify-content-lg-end flex-wrap">
-                    <button class="btn btn-outline-info btn-sm fw-bold px-3 py-2" id="btnDryRun" onclick="triggerSportyAutomation(true)">
-                        <i class="bi bi-shield-check me-1"></i> 1. Dry-Run Test (10 NGN)
+                <!-- Action Buttons -->
+                <div class="col-lg-3 col-12 d-flex flex-column gap-2 justify-content-end">
+                    <button class="btn btn-outline-info btn-sm fw-bold w-100 py-2" id="btnDryRun" onclick="triggerSportyAutomation(true)">
+                        <i class="bi bi-shield-check me-1"></i> 1. Dry-Run (<span class="stake-btn-label">10</span> NGN)
                     </button>
-                    <button class="btn btn-success btn-sm fw-bold px-3 py-2" id="btnLiveBet" onclick="triggerSportyAutomation(false)">
-                        <i class="bi bi-play-circle-fill me-1"></i> 2. Place Real Bet (10 NGN)
+                    <button class="btn btn-success btn-sm fw-bold w-100 py-2" id="btnLiveBet" onclick="triggerSportyAutomation(false)">
+                        <i class="bi bi-play-circle-fill me-1"></i> 2. Place Bet (<span class="stake-btn-label">10</span> NGN)
                     </button>
                 </div>
             </div>
@@ -705,25 +876,114 @@
             }
         }
 
-        // Generate Booking Code on Demand for Analyzed Games
-        async function generateSportyCodeNow() {
-            const btn = document.getElementById('btnGenCode');
-            const codeInput = document.getElementById('autoBookingCode');
-            const statusArea = document.getElementById('automationStatusArea');
-            const statusBox = document.getElementById('automationStatusBox');
-            const statusText = document.getElementById('automationStatusText');
-            const spinner = document.getElementById('automationSpinner');
+        function getCustomStake() {
+            const el = document.getElementById('customStakeInput');
+            const val = el ? parseFloat(el.value) : 10.0;
+            return (!isNaN(val) && val >= 10) ? val : 10.0;
+        }
 
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Booking on SportyBet...';
+        function setCustomStake(amount) {
+            const el = document.getElementById('customStakeInput');
+            if (el) el.value = amount;
+            onStakeAmountChange();
+        }
 
-            statusArea.classList.remove('d-none');
-            spinner.classList.remove('d-none');
-            statusBox.className = "alert alert-warning mb-0 py-2 small d-flex align-items-center gap-2";
-            statusText.innerText = "Connecting to SportyBet to build betslip and extract fresh booking code...";
+        function onStakeAmountChange() {
+            const stake = getCustomStake();
+            document.querySelectorAll('.stake-btn-label').forEach(s => {
+                s.innerText = stake.toLocaleString();
+            });
+            onRecSelectionChange();
+        }
 
-            try {
-                const matchesPayload = [];
+        function onRecSelectionChange() {
+            const rows = document.querySelectorAll('.rec-builder-row');
+            let count = 0;
+            let totalOdds = 1.0;
+
+            rows.forEach(r => {
+                const chk = r.querySelector('.rec-match-chk');
+                const sel = r.querySelector('.rec-market-select');
+                if (chk && chk.checked && sel) {
+                    count++;
+                    const opt = sel.options[sel.selectedIndex];
+                    const odd = parseFloat(opt ? opt.getAttribute('data-odds') : '1.5') || 1.5;
+                    if (odd > 1.0) totalOdds *= odd;
+                }
+            });
+
+            if (count === 0) totalOdds = 0.0;
+            const stake = getCustomStake();
+            const payout = totalOdds * stake;
+
+            const cntEl = document.getElementById('recSelectedCount');
+            const oddsEl = document.getElementById('recCombinedOdds');
+            const payEl = document.getElementById('recEstPayout');
+            if (cntEl) cntEl.innerText = count;
+            if (oddsEl) oddsEl.innerText = count > 0 ? `${totalOdds.toFixed(2)}x` : '--';
+            if (payEl) payEl.innerText = count > 0 ? `NGN ${payout.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '--';
+
+            if (count > 0) {
+                const formatted = totalOdds.toFixed(2);
+                const slipTot = document.getElementById('slipTotalOdds');
+                const dock = document.getElementById('dockOdds');
+                if (slipTot) slipTot.innerText = `${formatted}x`;
+                if (dock) dock.innerText = `${formatted}x Multiplier`;
+            }
+        }
+
+        function applyRecommendationPreset(mode) {
+            const rows = document.querySelectorAll('.rec-builder-row');
+            rows.forEach(r => {
+                const sel = r.querySelector('.rec-market-select');
+                if (!sel) return;
+                let targetPick = r.getAttribute('data-top-pick');
+                if (mode === 'safe') targetPick = r.getAttribute('data-safe-pick');
+                else if (mode === 'value') targetPick = r.getAttribute('data-value-pick');
+                else if (mode === 'original') targetPick = r.getAttribute('data-orig-pick');
+
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value.toLowerCase() === (targetPick || '').toLowerCase()) {
+                        sel.selectedIndex = i;
+                        break;
+                    }
+                }
+            });
+            onRecSelectionChange();
+            generateSportyCodeNow();
+        }
+
+        function selectTopConfidenceGames(maxGames) {
+            const rows = Array.from(document.querySelectorAll('.rec-builder-row'));
+            const sorted = rows.slice().sort((a, b) => {
+                return (parseInt(b.getAttribute('data-conf')) || 5) - (parseInt(a.getAttribute('data-conf')) || 5);
+            });
+            const allowed = new Set(sorted.slice(0, maxGames));
+            rows.forEach(r => {
+                const chk = r.querySelector('.rec-match-chk');
+                if (chk) chk.checked = allowed.has(r);
+            });
+            onRecSelectionChange();
+            generateSportyCodeNow();
+        }
+
+        function getSelectedRecommendedMatchesPayload() {
+            const matchesPayload = [];
+            const rows = document.querySelectorAll('.rec-builder-row');
+            if (rows.length > 0) {
+                rows.forEach(r => {
+                    const chk = r.querySelector('.rec-match-chk');
+                    const sel = r.querySelector('.rec-market-select');
+                    if (chk && chk.checked && sel) {
+                        matchesPayload.push({
+                            home_team: r.getAttribute('data-home'),
+                            away_team: r.getAttribute('data-away'),
+                            sporty_id: r.getAttribute('data-sporty-id') || '',
+                            selected_outcome: sel.value || 'Home'
+                        });
+                    }
+                });
+            } else {
                 document.querySelectorAll('.match-card').forEach(c => {
                     matchesPayload.push({
                         home_team: c.getAttribute('data-home'),
@@ -732,7 +992,36 @@
                         selected_outcome: c.getAttribute('data-outcome') || 'Home'
                     });
                 });
+            }
+            return matchesPayload;
+        }
 
+        // Generate Booking Code on Demand for Recommended / Selected Games
+        async function generateSportyCodeNow() {
+            const btn = document.getElementById('btnGenCode');
+            const codeInput = document.getElementById('autoBookingCode');
+            const statusArea = document.getElementById('automationStatusArea');
+            const statusBox = document.getElementById('automationStatusBox');
+            const statusText = document.getElementById('automationStatusText');
+            const spinner = document.getElementById('automationSpinner');
+
+            const matchesPayload = getSelectedRecommendedMatchesPayload();
+            if (matchesPayload.length === 0) {
+                alert("Please select at least 1 game in the Recommended Selections builder.");
+                return null;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Booking...';
+            }
+
+            statusArea.classList.remove('d-none');
+            spinner.classList.remove('d-none');
+            statusBox.className = "alert alert-warning mb-0 py-2 small d-flex align-items-center gap-2";
+            statusText.innerText = `Booking ${matchesPayload.length} recommended multi-market selection(s) on SportyBet...`;
+
+            try {
                 const resp = await fetch('/api/automation/generate-booking-code', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -744,21 +1033,38 @@
                 if (res.code) {
                     codeInput.value = res.code;
                     statusBox.className = "alert alert-success mb-0 py-2 small";
-                    statusText.innerHTML = `<strong>BOOKING CODE READY:</strong> <span class="badge bg-dark fs-6 px-3 py-1 text-warning">${res.code}</span> (Valid for betting on SportyBet)`;
-                    btn.innerHTML = `<i class="bi bi-check2-circle text-success me-1"></i> Code: ${res.code}`;
-                    btn.className = "btn btn-outline-success btn-sm fw-bold w-100 py-1";
+                    statusText.innerHTML = `<strong>BOOKING CODE READY:</strong> <span class="badge bg-dark fs-6 px-3 py-1 text-warning">${res.code}</span> (${matchesPayload.length} games booked — ready to place bet)`;
+                    if (btn) {
+                        btn.innerHTML = `<i class="bi bi-check2-circle text-success me-1"></i> ${res.code}`;
+                        btn.className = "btn btn-outline-success btn-sm fw-bold w-100 py-1";
+                        btn.disabled = false;
+                    }
+                    return res.code;
                 } else {
                     statusBox.className = "alert alert-danger mb-0 py-2 small";
                     statusText.innerText = "Notice: " + (res.message || "Could not generate code");
-                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retry Generation';
-                    btn.disabled = false;
+                    if (btn) {
+                        btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retry';
+                        btn.disabled = false;
+                    }
+                    return null;
                 }
             } catch (e) {
                 spinner.classList.add('d-none');
                 statusBox.className = "alert alert-danger mb-0 py-2 small";
                 statusText.innerText = "Generation error: " + e.message;
-                btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retry Generation';
-                btn.disabled = false;
+                if (btn) {
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retry';
+                    btn.disabled = false;
+                }
+                return null;
+            }
+        }
+
+        async function generateAndPlayRecommended(isDryRun) {
+            const code = await generateSportyCodeNow();
+            if (code) {
+                await triggerSportyAutomation(isDryRun);
             }
         }
 
@@ -771,16 +1077,16 @@
             const btnDry = document.getElementById('btnDryRun');
             const btnLive = document.getElementById('btnLiveBet');
             const codeInput = document.getElementById('autoBookingCode');
+            const stake = getCustomStake();
 
-            const code = codeInput ? codeInput.value.trim().toUpperCase() : "";
+            let code = codeInput ? codeInput.value.trim().toUpperCase() : "";
             if (!code || code.length < 4 || code.length > 10 || code.includes(" ")) {
-                alert("Please click 'Generate SportyBet Code' or enter a valid booking code (e.g. X1XUKH) to load the betslip.");
-                if (codeInput) codeInput.focus();
-                return;
+                code = await generateSportyCodeNow();
+                if (!code) return;
             }
 
             if (!isDryRun) {
-                if (!confirm(`CONFIRMATION: You are about to place a real 10 NGN wager on SportyBet using booking code ${code} and verified account 815****422. Proceed?`)) {
+                if (!confirm(`CONFIRMATION: You are about to place a real ${stake.toLocaleString()} NGN wager on SportyBet using booking code ${code} and verified account 815****422. Proceed?`)) {
                     return;
                 }
             }
@@ -789,8 +1095,8 @@
             spinner.classList.remove('d-none');
             statusBox.className = "alert alert-info mb-0 py-2 small d-flex align-items-center gap-2";
             statusText.innerText = isDryRun 
-                ? `Launching headless Chromium, loading code ${code}, and validating betslip with 10 NGN stake (Dry-Run)...`
-                : `Logging into SportyBet account 815****422, loading code ${code}, and executing 10 NGN wager...`;
+                ? `Launching headless Chromium, loading code ${code}, and validating betslip with ${stake.toLocaleString()} NGN stake (Dry-Run)...`
+                : `Logging into SportyBet account 815****422, loading code ${code}, and executing ${stake.toLocaleString()} NGN wager...`;
 
             btnDry.disabled = true;
             btnLive.disabled = true;
@@ -798,7 +1104,7 @@
             try {
                 const payload = {
                     code: code,
-                    stake: 10.0,
+                    stake: stake,
                     dry_run: isDryRun ? "true" : "false",
                     confirm: isDryRun ? "false" : "true"
                 };
@@ -817,9 +1123,8 @@
                     if (isDryRun) {
                         statusText.innerHTML = `<strong>VALIDATION SUCCESS:</strong> ${res.message} (Stake: ${res.stake} NGN, Potential Win: ${res.potential_win || '--'} NGN)`;
                     } else {
-                        statusText.innerHTML = `<strong>WAGER PLACED:</strong> Ticket ID: <strong>${res.ticket_id || 'Confirmed'}</strong> &bull; Balance: ${res.balance_after || 'NGN 90.93'} &bull; ${res.message}`;
+                        statusText.innerHTML = `<strong>WAGER PLACED:</strong> Ticket ID: <strong>${res.ticket_id || 'Confirmed'}</strong> &bull; Balance: ${res.balance_after || 'NGN 70.93'} &bull; ${res.message}`;
                     }
-                    // Refresh balance immediately
                     setTimeout(() => refreshSportyBalance(true), 1500);
                 } else {
                     statusBox.className = "alert alert-danger mb-0 py-2 small";
@@ -835,18 +1140,16 @@
             }
         }
 
-        // On page load, fetch live balance and auto-generate booking code for analyzed games
+        // On page load, fetch live balance, compute recommended odds, and auto-generate booking code for recommended selections
         document.addEventListener('DOMContentLoaded', () => {
+            onRecSelectionChange();
             refreshSportyBalance(false);
 
-            // Auto-generate booking code for analyzed matches if not already loaded from a booking code workflow
-            const codeInput = document.getElementById('autoBookingCode');
             const matchCards = document.querySelectorAll('.match-card');
-            if (codeInput && !codeInput.value.trim() && matchCards.length > 0) {
-                // Auto-generate in background so user has the code ready immediately
+            if (matchCards.length > 0) {
                 setTimeout(() => {
                     generateSportyCodeNow();
-                }, 800);
+                }, 600);
             }
         });
     </script>

@@ -582,23 +582,75 @@ class StatsAggregator:
             a_norm = self._normalize_name(away)
             return f"{h_norm}_vs_{a_norm}"
 
-        def determine_recommended_outcome(oh: float, od: float, oa: float, tip_str: str = "") -> str:
+        def build_market_odds(oh: float, od: float, oa: float, raw_market_odds: Optional[Dict[str, float]] = None) -> Dict[str, float]:
+            """Builds a complete multi-market odds table using real SportyBet market odds or vig-adjusted implied odds."""
+            m = dict(raw_market_odds or {})
+            oh = oh if oh > 1.0 else 2.10
+            od = od if od > 1.0 else 3.25
+            oa = oa if oa > 1.0 else 3.10
+            m.setdefault("Home", round(oh, 2))
+            m.setdefault("Draw", round(od, 2))
+            m.setdefault("Away", round(oa, 2))
+
+            inv_h, inv_d, inv_a = 1.0 / oh, 1.0 / od, 1.0 / oa
+            s = inv_h + inv_d + inv_a
+            p_h, p_d, p_a = inv_h / s, inv_d / s, inv_a / s
+
+            m.setdefault("1X", round(max(1.08, 0.93 / max(0.15, p_h + p_d)), 2))
+            m.setdefault("X2", round(max(1.08, 0.93 / max(0.15, p_d + p_a)), 2))
+            m.setdefault("12", round(max(1.10, 0.93 / max(0.20, p_h + p_a)), 2))
+            m.setdefault("Home DNB", round(max(1.10, 0.93 / max(0.15, p_h / max(0.1, p_h + p_a))), 2))
+            m.setdefault("Away DNB", round(max(1.10, 0.93 / max(0.15, p_a / max(0.1, p_h + p_a))), 2))
+            m.setdefault("Over 1.5", round(1.28 if abs(p_h - p_a) > 0.2 else 1.34, 2))
+            m.setdefault("Over 2.5", round(1.82 if abs(p_h - p_a) > 0.2 else 1.95, 2))
+            m.setdefault("Under 2.5", round(1.92 if abs(p_h - p_a) > 0.2 else 1.80, 2))
+            m.setdefault("Under 3.5", round(1.33 if abs(p_h - p_a) > 0.2 else 1.27, 2))
+            m.setdefault("BTTS Yes", round(1.78 if abs(p_h - p_a) < 0.25 else 1.90, 2))
+            m.setdefault("BTTS No", round(1.95 if abs(p_h - p_a) < 0.25 else 1.82, 2))
+            return m
+
+        def determine_recommended_outcome(oh: float, od: float, oa: float, tip_str: str = "", m_odds: Optional[Dict[str, float]] = None) -> str:
             t = tip_str.lower().strip()
-            if "away" in t or t == "2" or "0-1" in t or "0-2" in t or "1-2" in t or "0-3" in t:
-                return "Away"
-            if "home" in t or t == "1" or "1-0" in t or "2-0" in t or "2-1" in t or "3-0" in t or "3-1" in t:
-                return "Home"
-            if "draw" in t or t == "x" or "1-1" in t or "0-0" in t or "2-2" in t:
-                return "Draw"
-            
-            # Market odds favorite
+            mo = m_odds or build_market_odds(oh, od, oa)
+            if "over 2.5" in t or "ov 2.5" in t or "2-1" in t or "1-2" in t or "3-1" in t or "1-3" in t or "2-2" in t:
+                return "Over 1.5" if mo.get("Over 1.5", 1.30) >= 1.22 else "Over 2.5"
+            if "over 1.5" in t or "ov 1.5" in t:
+                return "Over 1.5"
+            if "under 2.5" in t or "un 2.5" in t or "0-0" in t:
+                return "Under 3.5" if mo.get("Under 3.5", 1.30) >= 1.22 else "Under 2.5"
+            if "under 3.5" in t or "un 3.5" in t:
+                return "Under 3.5"
+            if "btts" in t or "gg" in t or "both teams" in t:
+                return "BTTS Yes"
+            if "1x" in t or "home or draw" in t:
+                return "1X"
+            if "x2" in t or "away or draw" in t or "draw or away" in t:
+                return "X2"
+            if "away" in t or t == "2" or "0-1" in t or "0-2" in t or "0-3" in t:
+                return "Away" if oa <= 1.85 else ("X2" if mo.get("X2", 1.40) >= 1.22 else "Away DNB")
+            if "home" in t or t == "1" or "1-0" in t or "2-0" in t or "3-0" in t:
+                return "Home" if oh <= 1.85 else ("1X" if mo.get("1X", 1.35) >= 1.22 else "Home DNB")
+            if "draw" in t or t == "x" or "1-1" in t:
+                return "1X" if oh <= oa else "X2"
+
+            # Smart multi-market selection based on bookmaker pricing structure
             if oa > 1.0 and oh > 1.0:
-                if oa < oh and (od <= 1.0 or oa <= od):
-                    return "Away"
-                elif oh < oa and (od <= 1.0 or oh <= od):
+                if oh <= 1.68:
                     return "Home"
-                elif od > 1.0 and od < oh and od < oa:
-                    return "Draw"
+                elif oa <= 1.68:
+                    return "Away"
+                elif 1.69 <= oh <= 2.15 and mo.get("1X", 1.30) >= 1.22:
+                    return "1X"
+                elif 1.69 <= oa <= 2.15 and mo.get("X2", 1.30) >= 1.22:
+                    return "X2"
+                elif mo.get("Over 1.5", 1.30) >= 1.26 and mo.get("Over 1.5", 1.30) <= 1.48:
+                    return "Over 1.5"
+                elif abs(oh - oa) <= 0.35 and mo.get("BTTS Yes", 1.75) <= 1.85:
+                    return "BTTS Yes"
+                elif oh < oa:
+                    return "Home DNB" if mo.get("Home DNB", 1.55) >= 1.30 else "Home"
+                else:
+                    return "Away DNB" if mo.get("Away DNB", 1.55) >= 1.30 else "Away"
             return "Home"
 
         # Helper to match or create a fixture entry
@@ -618,7 +670,8 @@ class StatsAggregator:
             oh = round(float(sb.odds_home), 2)
             od = round(float(sb.odds_draw), 2) if sb.odds_draw > 1.0 else 3.20
             oa = round(float(sb.odds_away), 2)
-            rec = determine_recommended_outcome(oh, od, oa)
+            m_odds = build_market_odds(oh, od, oa, getattr(sb, "market_odds", None))
+            rec = determine_recommended_outcome(oh, od, oa, "", m_odds)
             fixtures_map[key] = {
                 "id": key,
                 "home_team": sb.home_team,
@@ -627,6 +680,7 @@ class StatsAggregator:
                 "odds_home": oh,
                 "odds_draw": od,
                 "odds_away": oa,
+                "market_odds": m_odds,
                 "sources": ["SportyBet"],
                 "has_sportybet_odds": True,
                 "odds_verified": True,
@@ -637,6 +691,7 @@ class StatsAggregator:
                 "predictz_tip": "",
                 "matchoutlook_tip": "",
                 "recommended_outcome": rec,
+                "recommended_odds": m_odds.get(rec, oh),
                 "sporty_id": sb.sporty_id
             }
 
@@ -849,8 +904,27 @@ class StatsAggregator:
                 if "MatchOutlook" not in fixtures_map[matched_key]["sources"]:
                     fixtures_map[matched_key]["sources"].append("MatchOutlook")
                 fixtures_map[matched_key]["matchoutlook_tip"] = mo.best_bet
+                if mo.best_bet:
+                    fixtures_map[matched_key]["recommended_outcome"] = determine_recommended_outcome(
+                        fixtures_map[matched_key]["odds_home"],
+                        fixtures_map[matched_key]["odds_draw"],
+                        fixtures_map[matched_key]["odds_away"],
+                        mo.best_bet,
+                        fixtures_map[matched_key].get("market_odds")
+                    )
 
         fixture_list = list(fixtures_map.values())
+        for item in fixture_list:
+            m_odds = build_market_odds(
+                item["odds_home"],
+                item["odds_draw"],
+                item["odds_away"],
+                item.get("market_odds")
+            )
+            item["market_odds"] = m_odds
+            rec = item.get("recommended_outcome") or "Home"
+            item["recommended_odds"] = m_odds.get(rec, item["odds_home"])
+
         # Sort so fixtures with SportyBet & high source consensus appear at the top
         fixture_list.sort(key=lambda x: (1 if "SportyBet" in x["sources"] else 0, len(x["sources"]), x["league"]), reverse=True)
         self._catalog_cache = fixture_list

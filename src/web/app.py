@@ -249,6 +249,8 @@ async def api_simulate_acca(request: Request):
         target_odds = float(body.get("target_odds", 10.0))
         match_count = int(body.get("match_count", 5))
         strategy = str(body.get("strategy", "max_prob"))
+        stake = float(body.get("stake", 10.0) or 10.0)
+        market_filter = str(body.get("market_filter", "all"))
 
         from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
         from models.acca_simulator import AccaSimulator
@@ -259,7 +261,9 @@ async def api_simulate_acca(request: Request):
         result = sim.simulate_optimal_slip(
             target_odds=target_odds,
             match_count=match_count,
-            strategy=strategy
+            strategy=strategy,
+            stake=stake,
+            market_filter=market_filter
         )
         return JSONResponse(result)
     except Exception as e:
@@ -274,8 +278,14 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
         if not raw_matches:
             raise ValueError("No matches were selected for analysis")
 
+        aggregator = get_stats_aggregator()
         matches = []
         for m in raw_matches:
+            sp_id = str(m.get("sporty_id") or "").strip()
+            if not sp_id:
+                sb_m = aggregator.find_sportybet_match(str(m.get("home_team", "")), str(m.get("away_team", "")))
+                if sb_m and sb_m.sporty_id:
+                    sp_id = sb_m.sporty_id
             matches.append({
                 "home_team": m.get("home_team"),
                 "away_team": m.get("away_team"),
@@ -285,11 +295,11 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
                 "odds_away": float(m.get("odds_away", 3.10)),
                 "selected_outcome": m.get("selected_outcome", "Home"),
                 "selected_odds": float(m.get("selected_odds", m.get("odds_home", 2.10))),
+                "sporty_id": sp_id,
                 "sport": "football",
                 "status": "upcoming"
             })
 
-        aggregator = get_stats_aggregator()
         ai_agent = get_ai_agent()
         sem = asyncio.Semaphore(2)
 

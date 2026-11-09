@@ -396,9 +396,97 @@ class MatchPredictor:
         scores_list.sort(key=lambda x: x[1], reverse=True)
         top_scores = [{"score": s[0], "prob": round(s[1], 3), "fair_odds": round(1.0/s[1], 2) if s[1]>0 else 99.0} for s in scores_list[:5]]
 
+        # Resolve real SportyBet multi-market bookmaker odds if available
+        sb_market_odds: Dict[str, float] = {}
+        try:
+            try:
+                from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
+            except ImportError:
+                from src.data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
+            agg = get_stats_aggregator()
+            sb_m = agg.find_sportybet_match(str(features.get("home_team", "")), str(features.get("away_team", "")))
+            if sb_m and getattr(sb_m, "market_odds", None):
+                sb_market_odds = dict(sb_m.market_odds)
+        except Exception:
+            pass
+
+        oh_book = float(features.get("odds_home", 0.0) or 0.0)
+        od_book = float(features.get("odds_draw", 0.0) or 0.0)
+        oa_book = float(features.get("odds_away", 0.0) or 0.0)
+
+        def get_book_odds(key: str, prob_val: float, default_override: float = 0.0) -> float:
+            if key in sb_market_odds and sb_market_odds[key] > 1.02:
+                return round(float(sb_market_odds[key]), 2)
+            if default_override > 1.02:
+                return round(default_override, 2)
+            p_clamped = max(0.05, min(0.92, prob_val))
+            return round(max(1.08, 0.93 / p_clamped), 2)
+
+        raw_bookable = [
+            ("Home", "1X2: Home (1)", "1X2", p_home, get_book_odds("Home", p_home, oh_book), False),
+            ("Draw", "1X2: Draw (X)", "1X2", p_draw, get_book_odds("Draw", p_draw, od_book), False),
+            ("Away", "1X2: Away (2)", "1X2", p_away, get_book_odds("Away", p_away, oa_book), False),
+            ("1X", "Double Chance: 1X (Home/Draw)", "Double Chance", p_1x, get_book_odds("1X", p_1x), True),
+            ("X2", "Double Chance: X2 (Away/Draw)", "Double Chance", p_x2, get_book_odds("X2", p_x2), True),
+            ("12", "Double Chance: 12 (Home/Away)", "Double Chance", p_12, get_book_odds("12", p_12), True),
+            ("Over 1.5", "Goals: Over 1.5", "Goals O/U", p_over_15, get_book_odds("Over 1.5", p_over_15), True),
+            ("Over 2.5", "Goals: Over 2.5", "Goals O/U", p_over_25, get_book_odds("Over 2.5", p_over_25), False),
+            ("Under 2.5", "Goals: Under 2.5", "Goals O/U", p_under_25, get_book_odds("Under 2.5", p_under_25), False),
+            ("Under 3.5", "Goals: Under 3.5", "Goals O/U", p_under_35, get_book_odds("Under 3.5", p_under_35), True),
+            ("BTTS Yes", "Both Teams To Score: Yes (GG)", "BTTS (GG/NG)", p_btts_yes, get_book_odds("BTTS Yes", p_btts_yes), False),
+            ("BTTS No", "Both Teams To Score: No (NG)", "BTTS (GG/NG)", p_btts_no, get_book_odds("BTTS No", p_btts_no), False),
+            ("Home DNB", "Draw No Bet: Home DNB", "Draw No Bet", p_dnb_home, get_book_odds("Home DNB", p_dnb_home), True),
+            ("Away DNB", "Draw No Bet: Away DNB", "Draw No Bet", p_dnb_away, get_book_odds("Away DNB", p_dnb_away), True),
+        ]
+
+        bookable_options = []
+        for pick_key, label, category, prob_v, b_odds, is_safe_cat in raw_bookable:
+            ev = (prob_v * b_odds) - 1.0
+            # Composite score balances high win probability, playable odds (>=1.20), and expected value
+            playable_bonus = 0.15 if (1.22 <= b_odds <= 2.45) else (-0.25 if b_odds < 1.15 else 0.0)
+            score = (prob_v * 0.65) + (max(-0.2, min(0.4, ev)) * 0.35) + playable_bonus
+            bookable_options.append({
+                "pick": pick_key,
+                "label": label,
+                "category": category,
+                "prob": round(prob_v, 3),
+                "prob_pct": round(prob_v * 100, 1),
+                "odds": b_odds,
+                "fair_odds": round(1.0 / prob_v, 2) if prob_v > 0 else 99.0,
+                "edge_pct": round(ev * 100, 1),
+                "is_safe": is_safe_cat and prob_v >= 0.64,
+                "score": round(score, 4)
+            })
+
+        # Sort for Top Pick (best balance of probability >= 52%, playable odds >= 1.20, and EV)
+        viable_top = [o for o in bookable_options if o["prob"] >= 0.50 and 1.18 <= o["odds"] <= 3.10]
+        if not viable_top:
+            viable_top = bookable_options
+        top_pick = sorted(viable_top, key=lambda x: x["score"], reverse=True)[0]
+
+        # Sort for Safe Pick (Double Chance, Over 1.5, Under 3.5, DNB with highest probability & odds >= 1.16)
+        viable_safe = [o for o in bookable_options if o["is_safe"] and o["odds"] >= 1.16]
+        if not viable_safe:
+            viable_safe = sorted(bookable_options, key=lambda x: x["prob"], reverse=True)
+        else:
+            viable_safe = sorted(viable_safe, key=lambda x: (x["prob"], x["edge_pct"]), reverse=True)
+        safe_pick = viable_safe[0]
+
+        # Sort for Value Pick (Highest positive EV with prob >= 40%)
+        viable_val = [o for o in bookable_options if o["prob"] >= 0.40 and o["odds"] <= 3.60]
+        if not viable_val:
+            viable_val = bookable_options
+        value_pick = sorted(viable_val, key=lambda x: (x["edge_pct"], x["prob"]), reverse=True)[0]
+
         return {
             "model_version": "Dixon-Coles Bivariate v4.2",
             "venue_split_xg": {"home": home_xg, "away": away_xg},
+            "recommended_markets": {
+                "top_pick": top_pick,
+                "safe_pick": safe_pick,
+                "value_pick": value_pick,
+                "bookable_options": bookable_options
+            },
             "match_outcome": {
                 "Home": {"prob": round(p_home, 3), "fair_odds": round(1.0/p_home, 2) if p_home>0 else 99.0},
                 "Draw": {"prob": round(p_draw, 3), "fair_odds": round(1.0/p_draw, 2) if p_draw>0 else 99.0},
