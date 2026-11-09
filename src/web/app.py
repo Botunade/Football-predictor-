@@ -471,7 +471,11 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
                 "sporty_specifier": m.get("sporty_specifier", ""),
                 "market_odds": m_odds,
                 "sport": "football",
-                "status": "upcoming"
+                "status": m.get("status", "upcoming"),
+                "live_score": m.get("live_score", ""),
+                "live_minute": m.get("live_minute", ""),
+                "live_clock": m.get("live_clock", ""),
+                "game_state": m.get("game_state", "")
             })
 
         ai_agent = get_ai_agent()

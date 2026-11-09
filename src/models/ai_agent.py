@@ -283,11 +283,15 @@ If no match exists, return 'NONE'.
                 h2h_data=h2h_data, league_ctx=league_ctx, sharp_sig=sharp_sig
             )
 
+        is_live = match_data.get("status") == "live" or bool(match_data.get("live_clock"))
+        live_info_line = f"- Match Status: IN-PLAY ({match_data.get('live_clock', 'Live')}) | Current Score: {match_data.get('live_score', '0-0')} | Game State: {match_data.get('game_state', 'In-Play')}" if is_live else "- Match Status: Upcoming Pre-Match"
+
         prompt = f"""You are an elite quantitative sports bettor and tactical football analyst.
 Analyze the following match using this multi-site scraped intelligence, Dixon-Coles Poisson models, and contextual data enrichment:
 
 ### FIXTURE DETAILS:
 - Match: {home} (Home) vs {away} (Away)
+{live_info_line}
 - SportyBet 1X2 Odds: Home: {odds_h:.2f} | Draw: {odds_d:.2f} | Away: {odds_a:.2f}
 - Betslip User Selection: {pick} @ {pick_odds:.2f}
 
