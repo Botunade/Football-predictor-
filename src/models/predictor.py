@@ -377,9 +377,74 @@ class MatchPredictor:
         p_ah_away_minus_15 = max(0.02, p_away_win_by_2plus)
         p_ah_home_plus_15 = max(0.02, 1.0 - p_ah_away_minus_15)
 
-        # Clean Sheet
+        # Clean Sheet & Team Totals (Full Time)
         p_home_cs = float(np.sum(score_matrix[:, 0]))
         p_away_cs = float(np.sum(score_matrix[0, :]))
+        p_home_cs_no = max(0.02, 1.0 - p_home_cs)
+        p_away_cs_no = max(0.02, 1.0 - p_away_cs)
+
+        p_home_over_05 = max(0.02, 1.0 - p_away_cs)
+        p_home_under_05 = max(0.02, p_away_cs)
+        p_home_over_15 = float(np.sum(score_matrix[2:, :]))
+        p_home_under_15 = max(0.02, 1.0 - p_home_over_15)
+
+        p_away_over_05 = max(0.02, 1.0 - p_home_cs)
+        p_away_under_05 = max(0.02, p_home_cs)
+        p_away_over_15 = float(np.sum(score_matrix[:, 2:]))
+        p_away_under_15 = max(0.02, 1.0 - p_away_over_15)
+
+        # Odd / Even & Multi-Goals
+        p_odd_goals = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if (i + j) % 2 == 1]))
+        p_even_goals = max(0.02, 1.0 - p_odd_goals)
+        p_mg_1_2 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if 1 <= (i + j) <= 2]))
+        p_mg_1_3 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if 1 <= (i + j) <= 3]))
+        p_mg_2_3 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if 2 <= (i + j) <= 3]))
+        p_mg_1_4 = float(np.sum([score_matrix[i, j] for i in range(MAX_GOALS) for j in range(MAX_GOALS) if 1 <= (i + j) <= 4]))
+
+        # Early Payout 1UP / 2UP Probabilities
+        p_home_1up = min(0.95, p_home + (p_draw * 0.34) + (p_away * 0.12))
+        p_away_1up = min(0.95, p_away + (p_draw * 0.32) + (p_home * 0.10))
+        p_home_2up = min(0.94, p_home + (p_draw * 0.08))
+        p_away_2up = min(0.94, p_away + (p_draw * 0.07))
+
+        # =====================================================================
+        # 1st Half (~44% of xG) & 2nd Half (~56% of xG) Bivariate Matrices
+        # =====================================================================
+        def build_half_probs(h_scale: float) -> Dict[str, float]:
+            hl_h = max(0.12, home_xg * h_scale)
+            hl_a = max(0.10, away_xg * h_scale)
+            hm = np.zeros((5, 5))
+            for i in range(5):
+                for j in range(5):
+                    bp = poisson_pmf(i, hl_h) * poisson_pmf(j, hl_a)
+                    hm[i, j] = max(0.00001, bp * dixon_coles_tau(i, j, hl_h, hl_a, rho=-0.08))
+            hm /= np.sum(hm)
+            ph = float(np.sum(np.tril(hm, -1)))
+            pd = float(np.sum(np.diag(hm)))
+            pa = float(np.sum(np.triu(hm, 1)))
+            po05 = float(np.sum([hm[i, j] for i in range(5) for j in range(5) if i + j >= 1]))
+            po15 = float(np.sum([hm[i, j] for i in range(5) for j in range(5) if i + j >= 2]))
+            po25 = float(np.sum([hm[i, j] for i in range(5) for j in range(5) if i + j >= 3]))
+            pgg = float(np.sum(hm[1:, 1:]))
+            return {
+                "home": ph, "draw": pd, "away": pa,
+                "1x": min(0.98, ph + pd), "x2": min(0.98, pd + pa), "12": min(0.98, ph + pa),
+                "dnb_h": ph / (ph + pa) if (ph + pa) > 0 else 0.5,
+                "dnb_a": pa / (ph + pa) if (ph + pa) > 0 else 0.5,
+                "o05": po05, "u05": max(0.02, 1.0 - po05),
+                "o15": po15, "u15": max(0.02, 1.0 - po15),
+                "o25": po25, "u25": max(0.01, 1.0 - po25),
+                "gg": pgg, "ng": max(0.02, 1.0 - pgg)
+            }
+
+        ht_p = build_half_probs(0.44)
+        sh_p = build_half_probs(0.56)
+
+        # Win Either Half & Both Halves O/U 1.5
+        p_home_weh = min(0.96, 1.0 - ((1.0 - ht_p["home"]) * (1.0 - sh_p["home"])))
+        p_away_weh = min(0.96, 1.0 - ((1.0 - ht_p["away"]) * (1.0 - sh_p["away"])))
+        p_bh_over_15 = max(0.02, ht_p["o15"] * sh_p["o15"])
+        p_bh_under_15 = max(0.02, ht_p["u15"] * sh_p["u15"])
 
         # HT/FT Estimates
         p_ht_ft_11 = min(0.95, p_home * 0.65)
@@ -398,6 +463,8 @@ class MatchPredictor:
 
         # Resolve real SportyBet multi-market bookmaker odds if available
         sb_market_odds: Dict[str, float] = {}
+        if isinstance(features.get("market_odds"), dict):
+            sb_market_odds.update(features["market_odds"])
         try:
             try:
                 from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
@@ -406,7 +473,9 @@ class MatchPredictor:
             agg = get_stats_aggregator()
             sb_m = agg.find_sportybet_match(str(features.get("home_team", "")), str(features.get("away_team", "")))
             if sb_m and getattr(sb_m, "market_odds", None):
-                sb_market_odds = dict(sb_m.market_odds)
+                for mk, mv in sb_m.market_odds.items():
+                    if mk not in sb_market_odds or sb_market_odds[mk] <= 1.0:
+                        sb_market_odds[mk] = mv
         except Exception:
             pass
 
@@ -415,37 +484,127 @@ class MatchPredictor:
         oa_book = float(features.get("odds_away", 0.0) or 0.0)
 
         def get_book_odds(key: str, prob_val: float, default_override: float = 0.0) -> float:
-            if key in sb_market_odds and sb_market_odds[key] > 1.02:
+            if key in sb_market_odds and sb_market_odds[key] > 1.01:
                 return round(float(sb_market_odds[key]), 2)
-            if default_override > 1.02:
+            if default_override > 1.01:
                 return round(default_override, 2)
-            p_clamped = max(0.05, min(0.92, prob_val))
-            return round(max(1.08, 0.93 / p_clamped), 2)
+            p_clamped = max(0.04, min(0.93, prob_val))
+            return round(max(1.06, 0.93 / p_clamped), 2)
 
         raw_bookable = [
-            ("Home", "1X2: Home (1)", "1X2", p_home, get_book_odds("Home", p_home, oh_book), False),
-            ("Draw", "1X2: Draw (X)", "1X2", p_draw, get_book_odds("Draw", p_draw, od_book), False),
-            ("Away", "1X2: Away (2)", "1X2", p_away, get_book_odds("Away", p_away, oa_book), False),
-            ("1X", "Double Chance: 1X (Home/Draw)", "Double Chance", p_1x, get_book_odds("1X", p_1x), True),
-            ("X2", "Double Chance: X2 (Away/Draw)", "Double Chance", p_x2, get_book_odds("X2", p_x2), True),
-            ("12", "Double Chance: 12 (Home/Away)", "Double Chance", p_12, get_book_odds("12", p_12), True),
-            ("Over 1.5", "Goals: Over 1.5", "Goals O/U", p_over_15, get_book_odds("Over 1.5", p_over_15), True),
-            ("Over 2.5", "Goals: Over 2.5", "Goals O/U", p_over_25, get_book_odds("Over 2.5", p_over_25), False),
-            ("Under 2.5", "Goals: Under 2.5", "Goals O/U", p_under_25, get_book_odds("Under 2.5", p_under_25), False),
-            ("Under 3.5", "Goals: Under 3.5", "Goals O/U", p_under_35, get_book_odds("Under 3.5", p_under_35), True),
-            ("BTTS Yes", "Both Teams To Score: Yes (GG)", "BTTS (GG/NG)", p_btts_yes, get_book_odds("BTTS Yes", p_btts_yes), False),
-            ("BTTS No", "Both Teams To Score: No (NG)", "BTTS (GG/NG)", p_btts_no, get_book_odds("BTTS No", p_btts_no), False),
-            ("Home DNB", "Draw No Bet: Home DNB", "Draw No Bet", p_dnb_home, get_book_odds("Home DNB", p_dnb_home), True),
-            ("Away DNB", "Draw No Bet: Away DNB", "Draw No Bet", p_dnb_away, get_book_odds("Away DNB", p_dnb_away), True),
+            # Full Time 1X2 & Early Payout
+            ("Home", "1X2: Home (1)", "Full Time 1X2 & Early Payout", p_home, get_book_odds("Home", p_home, oh_book), False),
+            ("Draw", "1X2: Draw (X)", "Full Time 1X2 & Early Payout", p_draw, get_book_odds("Draw", p_draw, od_book), False),
+            ("Away", "1X2: Away (2)", "Full Time 1X2 & Early Payout", p_away, get_book_odds("Away", p_away, oa_book), False),
+            ("Home (1UP)", "1X2 - 1UP: Home (Early Payout)", "Full Time 1X2 & Early Payout", p_home_1up, get_book_odds("Home (1UP)", p_home_1up), True),
+            ("Away (1UP)", "1X2 - 1UP: Away (Early Payout)", "Full Time 1X2 & Early Payout", p_away_1up, get_book_odds("Away (1UP)", p_away_1up), True),
+            ("Home (2UP)", "1X2 - 2UP: Home (2-Goal Payout)", "Full Time 1X2 & Early Payout", p_home_2up, get_book_odds("Home (2UP)", p_home_2up), False),
+            ("Away (2UP)", "1X2 - 2UP: Away (2-Goal Payout)", "Full Time 1X2 & Early Payout", p_away_2up, get_book_odds("Away (2UP)", p_away_2up), False),
+
+            # Double Chance & Draw No Bet
+            ("1X", "Double Chance: 1X (Home/Draw)", "Double Chance & DNB", p_1x, get_book_odds("1X", p_1x), True),
+            ("X2", "Double Chance: X2 (Away/Draw)", "Double Chance & DNB", p_x2, get_book_odds("X2", p_x2), True),
+            ("12", "Double Chance: 12 (Home/Away)", "Double Chance & DNB", p_12, get_book_odds("12", p_12), True),
+            ("Home DNB", "Draw No Bet: Home DNB", "Double Chance & DNB", p_dnb_home, get_book_odds("Home DNB", p_dnb_home), True),
+            ("Away DNB", "Draw No Bet: Away DNB", "Double Chance & DNB", p_dnb_away, get_book_odds("Away DNB", p_dnb_away), True),
+
+            # Full Time Goals O/U
+            ("Over 0.5", "Full Time: Over 0.5 Goals", "Full Time Goals O/U", p_over_05, get_book_odds("Over 0.5", p_over_05), True),
+            ("Over 1.5", "Full Time: Over 1.5 Goals", "Full Time Goals O/U", p_over_15, get_book_odds("Over 1.5", p_over_15), True),
+            ("Under 1.5", "Full Time: Under 1.5 Goals", "Full Time Goals O/U", p_under_15, get_book_odds("Under 1.5", p_under_15), False),
+            ("Over 2.5", "Full Time: Over 2.5 Goals", "Full Time Goals O/U", p_over_25, get_book_odds("Over 2.5", p_over_25), False),
+            ("Under 2.5", "Full Time: Under 2.5 Goals", "Full Time Goals O/U", p_under_25, get_book_odds("Under 2.5", p_under_25), False),
+            ("Over 3.5", "Full Time: Over 3.5 Goals", "Full Time Goals O/U", p_over_35, get_book_odds("Over 3.5", p_over_35), False),
+            ("Under 3.5", "Full Time: Under 3.5 Goals", "Full Time Goals O/U", p_under_35, get_book_odds("Under 3.5", p_under_35), True),
+            ("Under 4.5", "Full Time: Under 4.5 Goals", "Full Time Goals O/U", p_under_45, get_book_odds("Under 4.5", p_under_45), True),
+
+            # 1st Half Markets
+            ("1st Half Over 0.5", "1st Half: Over 0.5 Goals", "1st Half Markets", ht_p["o05"], get_book_odds("1st Half Over 0.5", ht_p["o05"]), True),
+            ("1st Half Under 0.5", "1st Half: Under 0.5 Goals", "1st Half Markets", ht_p["u05"], get_book_odds("1st Half Under 0.5", ht_p["u05"]), False),
+            ("1st Half Over 1.5", "1st Half: Over 1.5 Goals", "1st Half Markets", ht_p["o15"], get_book_odds("1st Half Over 1.5", ht_p["o15"]), False),
+            ("1st Half Under 1.5", "1st Half: Under 1.5 Goals", "1st Half Markets", ht_p["u15"], get_book_odds("1st Half Under 1.5", ht_p["u15"]), True),
+            ("1st Half Under 2.5", "1st Half: Under 2.5 Goals", "1st Half Markets", ht_p["u25"], get_book_odds("1st Half Under 2.5", ht_p["u25"]), True),
+            ("1st Half Home", "1st Half 1X2: Home", "1st Half Markets", ht_p["home"], get_book_odds("1st Half Home", ht_p["home"]), False),
+            ("1st Half Draw", "1st Half 1X2: Draw", "1st Half Markets", ht_p["draw"], get_book_odds("1st Half Draw", ht_p["draw"]), False),
+            ("1st Half Away", "1st Half 1X2: Away", "1st Half Markets", ht_p["away"], get_book_odds("1st Half Away", ht_p["away"]), False),
+            ("1st Half 1X", "1st Half DC: 1X (Home/Draw)", "1st Half Markets", ht_p["1x"], get_book_odds("1st Half 1X", ht_p["1x"]), True),
+            ("1st Half X2", "1st Half DC: X2 (Away/Draw)", "1st Half Markets", ht_p["x2"], get_book_odds("1st Half X2", ht_p["x2"]), True),
+            ("1st Half 12", "1st Half DC: 12 (Home/Away)", "1st Half Markets", ht_p["12"], get_book_odds("1st Half 12", ht_p["12"]), False),
+            ("1st Half DNB Home", "1st Half DNB: Home", "1st Half Markets", ht_p["dnb_h"], get_book_odds("1st Half DNB Home", ht_p["dnb_h"]), True),
+            ("1st Half DNB Away", "1st Half DNB: Away", "1st Half Markets", ht_p["dnb_a"], get_book_odds("1st Half DNB Away", ht_p["dnb_a"]), True),
+            ("1st Half GG", "1st Half BTTS: Yes (GG)", "1st Half Markets", ht_p["gg"], get_book_odds("1st Half GG", ht_p["gg"]), False),
+            ("1st Half NG", "1st Half BTTS: No (NG)", "1st Half Markets", ht_p["ng"], get_book_odds("1st Half NG", ht_p["ng"]), True),
+
+            # 2nd Half Markets
+            ("2nd Half Over 0.5", "2nd Half: Over 0.5 Goals", "2nd Half Markets", sh_p["o05"], get_book_odds("2nd Half Over 0.5", sh_p["o05"]), True),
+            ("2nd Half Under 0.5", "2nd Half: Under 0.5 Goals", "2nd Half Markets", sh_p["u05"], get_book_odds("2nd Half Under 0.5", sh_p["u05"]), False),
+            ("2nd Half Over 1.5", "2nd Half: Over 1.5 Goals", "2nd Half Markets", sh_p["o15"], get_book_odds("2nd Half Over 1.5", sh_p["o15"]), False),
+            ("2nd Half Under 1.5", "2nd Half: Under 1.5 Goals", "2nd Half Markets", sh_p["u15"], get_book_odds("2nd Half Under 1.5", sh_p["u15"]), True),
+            ("2nd Half Over 2.5", "2nd Half: Over 2.5 Goals", "2nd Half Markets", sh_p["o25"], get_book_odds("2nd Half Over 2.5", sh_p["o25"]), False),
+            ("2nd Half Under 2.5", "2nd Half: Under 2.5 Goals", "2nd Half Markets", sh_p["u25"], get_book_odds("2nd Half Under 2.5", sh_p["u25"]), True),
+            ("2nd Half Home", "2nd Half 1X2: Home", "2nd Half Markets", sh_p["home"], get_book_odds("2nd Half Home", sh_p["home"]), False),
+            ("2nd Half Draw", "2nd Half 1X2: Draw", "2nd Half Markets", sh_p["draw"], get_book_odds("2nd Half Draw", sh_p["draw"]), False),
+            ("2nd Half Away", "2nd Half 1X2: Away", "2nd Half Markets", sh_p["away"], get_book_odds("2nd Half Away", sh_p["away"]), False),
+            ("2nd Half 1X", "2nd Half DC: 1X (Home/Draw)", "2nd Half Markets", sh_p["1x"], get_book_odds("2nd Half 1X", sh_p["1x"]), True),
+            ("2nd Half X2", "2nd Half DC: X2 (Away/Draw)", "2nd Half Markets", sh_p["x2"], get_book_odds("2nd Half X2", sh_p["x2"]), True),
+            ("2nd Half 12", "2nd Half DC: 12 (Home/Away)", "2nd Half Markets", sh_p["12"], get_book_odds("2nd Half 12", sh_p["12"]), False),
+            ("2nd Half DNB Home", "2nd Half DNB: Home", "2nd Half Markets", sh_p["dnb_h"], get_book_odds("2nd Half DNB Home", sh_p["dnb_h"]), True),
+            ("2nd Half DNB Away", "2nd Half DNB: Away", "2nd Half Markets", sh_p["dnb_a"], get_book_odds("2nd Half DNB Away", sh_p["dnb_a"]), True),
+            ("2nd Half GG", "2nd Half BTTS: Yes (GG)", "2nd Half Markets", sh_p["gg"], get_book_odds("2nd Half GG", sh_p["gg"]), False),
+            ("2nd Half NG", "2nd Half BTTS: No (NG)", "2nd Half Markets", sh_p["ng"], get_book_odds("2nd Half NG", sh_p["ng"]), True),
+
+            # BTTS & Goal Ranges
+            ("BTTS Yes", "Both Teams To Score: Yes (GG)", "BTTS & Special Markets", p_btts_yes, get_book_odds("BTTS Yes", p_btts_yes), False),
+            ("BTTS No", "Both Teams To Score: No (NG)", "BTTS & Special Markets", p_btts_no, get_book_odds("BTTS No", p_btts_no), False),
+            ("Multi-Goals 1-3", "Multi-Goals: 1-3 Goals", "BTTS & Special Markets", p_mg_1_3, get_book_odds("Multi-Goals 1-3", p_mg_1_3), True),
+            ("Multi-Goals 2-3", "Multi-Goals: 2-3 Goals", "BTTS & Special Markets", p_mg_2_3, get_book_odds("Multi-Goals 2-3", p_mg_2_3), False),
+            ("Multi-Goals 1-4", "Multi-Goals: 1-4 Goals", "BTTS & Special Markets", p_mg_1_4, get_book_odds("Multi-Goals 1-4", p_mg_1_4), True),
+            ("Odd Goals", "Odd/Even: Odd Goals", "BTTS & Special Markets", p_odd_goals, get_book_odds("Odd Goals", p_odd_goals), False),
+            ("Even Goals", "Odd/Even: Even Goals", "BTTS & Special Markets", p_even_goals, get_book_odds("Even Goals", p_even_goals), False),
+
+            # Team Goals, Clean Sheets & Halves
+            ("Home Team Over 0.5", "Home Team: Over 0.5 Goals", "Team Goals & Clean Sheets", p_home_over_05, get_book_odds("Home Team Over 0.5", p_home_over_05), True),
+            ("Home Team Over 1.5", "Home Team: Over 1.5 Goals", "Team Goals & Clean Sheets", p_home_over_15, get_book_odds("Home Team Over 1.5", p_home_over_15), False),
+            ("Home Team Under 1.5", "Home Team: Under 1.5 Goals", "Team Goals & Clean Sheets", p_home_under_15, get_book_odds("Home Team Under 1.5", p_home_under_15), True),
+            ("Away Team Over 0.5", "Away Team: Over 0.5 Goals", "Team Goals & Clean Sheets", p_away_over_05, get_book_odds("Away Team Over 0.5", p_away_over_05), True),
+            ("Away Team Over 1.5", "Away Team: Over 1.5 Goals", "Team Goals & Clean Sheets", p_away_over_15, get_book_odds("Away Team Over 1.5", p_away_over_15), False),
+            ("Away Team Under 1.5", "Away Team: Under 1.5 Goals", "Team Goals & Clean Sheets", p_away_under_15, get_book_odds("Away Team Under 1.5", p_away_under_15), True),
+            ("Home Clean Sheet Yes", "Home Clean Sheet: Yes", "Team Goals & Clean Sheets", p_home_cs, get_book_odds("Home Clean Sheet Yes", p_home_cs), False),
+            ("Home Clean Sheet No", "Home Clean Sheet: No", "Team Goals & Clean Sheets", p_home_cs_no, get_book_odds("Home Clean Sheet No", p_home_cs_no), True),
+            ("Away Clean Sheet Yes", "Away Clean Sheet: Yes", "Team Goals & Clean Sheets", p_away_cs, get_book_odds("Away Clean Sheet Yes", p_away_cs), False),
+            ("Away Clean Sheet No", "Away Clean Sheet: No", "Team Goals & Clean Sheets", p_away_cs_no, get_book_odds("Away Clean Sheet No", p_away_cs_no), True),
+            ("Home Win Either Half", "Home Team to Win Either Half: Yes", "Team Goals & Clean Sheets", p_home_weh, get_book_odds("Home Win Either Half", p_home_weh), True),
+            ("Away Win Either Half", "Away Team to Win Either Half: Yes", "Team Goals & Clean Sheets", p_away_weh, get_book_odds("Away Win Either Half", p_away_weh), True),
+            ("Both Halves Under 1.5", "Both Halves Under 1.5: Yes", "Team Goals & Clean Sheets", p_bh_under_15, get_book_odds("Both Halves Under 1.5", p_bh_under_15), True),
         ]
 
+        # If the user's slip selection is a custom/niche SportyBet market not in raw_bookable (e.g. Corners, Bookings, Handicaps),
+        # inject it automatically so it can be analyzed, displayed, and re-booked with 100% fidelity!
+        user_sel_pick = str(features.get("selected_outcome") or "").strip()
+        user_sel_odds = float(features.get("selected_odds") or 0.0)
+        existing_picks_lower = {r[0].lower(): r for r in raw_bookable}
+        if user_sel_pick and user_sel_pick.lower() not in existing_picks_lower:
+            est_prob = max(0.08, min(0.92, (0.93 / user_sel_odds) if user_sel_odds > 1.02 else 0.55))
+            raw_bookable.insert(0, (
+                user_sel_pick,
+                f"Slip Pick: {user_sel_pick}",
+                "Extracted Slip Market",
+                est_prob,
+                user_sel_odds if user_sel_odds > 1.01 else round(0.93 / est_prob, 2),
+                est_prob >= 0.65
+            ))
+
         bookable_options = []
+        selected_pick_eval = None
         for pick_key, label, category, prob_v, b_odds, is_safe_cat in raw_bookable:
+            # If this matches the user's slip pick and user_sel_odds > 1.01, use the exact slip odds
+            if user_sel_pick and pick_key.lower() == user_sel_pick.lower() and user_sel_odds > 1.01:
+                b_odds = round(user_sel_odds, 2)
             ev = (prob_v * b_odds) - 1.0
             # Composite score balances high win probability, playable odds (>=1.20), and expected value
-            playable_bonus = 0.15 if (1.22 <= b_odds <= 2.45) else (-0.25 if b_odds < 1.15 else 0.0)
+            playable_bonus = 0.15 if (1.20 <= b_odds <= 2.45) else (-0.25 if b_odds < 1.14 else 0.0)
             score = (prob_v * 0.65) + (max(-0.2, min(0.4, ev)) * 0.35) + playable_bonus
-            bookable_options.append({
+            opt_dict = {
                 "pick": pick_key,
                 "label": label,
                 "category": category,
@@ -456,15 +615,18 @@ class MatchPredictor:
                 "edge_pct": round(ev * 100, 1),
                 "is_safe": is_safe_cat and prob_v >= 0.64,
                 "score": round(score, 4)
-            })
+            }
+            bookable_options.append(opt_dict)
+            if user_sel_pick and pick_key.lower() == user_sel_pick.lower():
+                selected_pick_eval = opt_dict
 
-        # Sort for Top Pick (best balance of probability >= 52%, playable odds >= 1.20, and EV)
+        # Sort for Top Pick (best balance of probability >= 52%, playable odds >= 1.18, and EV)
         viable_top = [o for o in bookable_options if o["prob"] >= 0.50 and 1.18 <= o["odds"] <= 3.10]
         if not viable_top:
             viable_top = bookable_options
         top_pick = sorted(viable_top, key=lambda x: x["score"], reverse=True)[0]
 
-        # Sort for Safe Pick (Double Chance, Over 1.5, Under 3.5, DNB with highest probability & odds >= 1.16)
+        # Sort for Safe Pick (Double Chance, Over 1.5, Under 3.5, 1st/2nd Half O/U, DNB with highest probability & odds >= 1.16)
         viable_safe = [o for o in bookable_options if o["is_safe"] and o["odds"] >= 1.16]
         if not viable_safe:
             viable_safe = sorted(bookable_options, key=lambda x: x["prob"], reverse=True)
@@ -478,13 +640,30 @@ class MatchPredictor:
             viable_val = bookable_options
         value_pick = sorted(viable_val, key=lambda x: (x["edge_pct"], x["prob"]), reverse=True)[0]
 
+        if not selected_pick_eval:
+            selected_pick_eval = top_pick
+
         return {
-            "model_version": "Dixon-Coles Bivariate v4.2",
+            "model_version": "Dixon-Coles Bivariate v4.3 (Full + 1st/2nd Half)",
             "venue_split_xg": {"home": home_xg, "away": away_xg},
+            "selected_pick_evaluation": selected_pick_eval,
+            "first_half": {
+                "Over 0.5": {"prob": round(ht_p["o05"], 3), "fair_odds": round(1.0/ht_p["o05"], 2)},
+                "Under 1.5": {"prob": round(ht_p["u15"], 3), "fair_odds": round(1.0/ht_p["u15"], 2)},
+                "1X": {"prob": round(ht_p["1x"], 3), "fair_odds": round(1.0/ht_p["1x"], 2)},
+                "X2": {"prob": round(ht_p["x2"], 3), "fair_odds": round(1.0/ht_p["x2"], 2)},
+            },
+            "second_half": {
+                "Over 0.5": {"prob": round(sh_p["o05"], 3), "fair_odds": round(1.0/sh_p["o05"], 2)},
+                "Over 1.5": {"prob": round(sh_p["o15"], 3), "fair_odds": round(1.0/sh_p["o15"], 2)},
+                "Under 1.5": {"prob": round(sh_p["u15"], 3), "fair_odds": round(1.0/sh_p["u15"], 2)},
+                "Under 2.5": {"prob": round(sh_p["u25"], 3), "fair_odds": round(1.0/sh_p["u25"], 2)},
+            },
             "recommended_markets": {
                 "top_pick": top_pick,
                 "safe_pick": safe_pick,
                 "value_pick": value_pick,
+                "selected_pick_eval": selected_pick_eval,
                 "bookable_options": bookable_options
             },
             "match_outcome": {

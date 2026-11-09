@@ -39,7 +39,12 @@ class SportyBetOddsScraper:
     """
 
     SPORTY_FOOTBALL_URL = "https://www.sportybet.com/ng/sport/football"
-    UPCOMING_EVENTS_BASE = "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C26%2C36%2C14%2C60100&pageSize=100&option=1"
+    UPCOMING_EVENTS_BASE = (
+        "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?"
+        "sportId=sr%3Asport%3A1&"
+        "marketId=1%2C18%2C10%2C29%2C11%2C26%2C19%2C20%2C31%2C32%2C50%2C51%2C60%2C63%2C64%2C68%2C75%2C83%2C85%2C86%2C90%2C95%2C548%2C60100%2C60200&"
+        "pageSize=100&option=1"
+    )
 
     def __init__(self, headless: bool = True, timeout: int = 40000):
         self.headless = headless
@@ -172,70 +177,80 @@ class SportyBetOddsScraper:
 
     @staticmethod
     def _parse_event_markets(ev: Dict[str, Any]) -> Tuple[float, float, float, Dict[str, float]]:
-        """Extracts 1X2 and multi-market odds (DC, Over/Under, GG/NG, DNB) from a SportyBet event payload."""
+        """Extracts 1X2 and 45+ multi-market odds (1st Half, 2nd Half, DC, O/U, GG/NG, DNB, Team O/U, 1UP/2UP) from a SportyBet event payload."""
         h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
         m_odds: Dict[str, float] = {}
 
+        try:
+            try:
+                from data_extractor.code_reader import normalize_sportybet_selection
+            except ImportError:
+                from src.data_extractor.code_reader import normalize_sportybet_selection
+        except Exception:
+            normalize_sportybet_selection = None
+
         for m in ev.get("markets", []):
-            m_id = str(m.get("id", ""))
-            spec = str(m.get("specifier") or "")
+            m_id = str(m.get("id", "")).strip()
+            m_desc = str(m.get("desc", "")).strip()
+            spec = str(m.get("specifier") or "").strip()
             outcomes = m.get("outcomes", [])
 
-            if m_id == "1":  # 1X2
-                for o in outcomes:
-                    o_id = str(o.get("id", ""))
+            for o in outcomes:
+                o_id = str(o.get("id", "")).strip()
+                o_desc = str(o.get("desc", "")).strip()
+                try:
                     val = float(o.get("odds") or 0.0)
-                    if val <= 1.0:
-                        continue
-                    if o_id == "1":
+                except (ValueError, TypeError):
+                    val = 0.0
+                if val <= 1.0:
+                    continue
+
+                if normalize_sportybet_selection is not None:
+                    norm_key = normalize_sportybet_selection(m_desc, o_desc, m_id, spec)
+                    if norm_key:
+                        m_odds[norm_key] = val
+
+                if m_id == "1":
+                    if o_id == "1" or o_desc.lower() == "home":
                         h_odd = val
                         m_odds["Home"] = val
-                    elif o_id == "2":
+                    elif o_id == "2" or o_desc.lower() == "draw":
                         d_odd = val
                         m_odds["Draw"] = val
-                    elif o_id == "3":
+                    elif o_id == "3" or o_desc.lower() == "away":
                         a_odd = val
                         m_odds["Away"] = val
-            elif m_id == "10":  # Double Chance
-                for o in outcomes:
-                    o_id = str(o.get("id", ""))
-                    val = float(o.get("odds") or 0.0)
-                    if val <= 1.0:
-                        continue
+                elif m_id == "10":
                     if o_id == "9":
                         m_odds["1X"] = val
                     elif o_id == "10":
                         m_odds["12"] = val
                     elif o_id == "11":
                         m_odds["X2"] = val
-            elif m_id == "18":  # Over/Under
-                if spec in ("total=1.5", "total=2.5", "total=3.5"):
+                elif m_id == "18" and spec.startswith("total="):
                     line = spec.split("=")[1]
-                    for o in outcomes:
-                        o_id = str(o.get("id", ""))
-                        val = float(o.get("odds") or 0.0)
-                        if val <= 1.0:
-                            continue
-                        if o_id == "12":
-                            m_odds[f"Over {line}"] = val
-                        elif o_id == "13":
-                            m_odds[f"Under {line}"] = val
-            elif m_id == "29":  # GG/NG (BTTS)
-                for o in outcomes:
-                    o_id = str(o.get("id", ""))
-                    val = float(o.get("odds") or 0.0)
-                    if val <= 1.0:
-                        continue
+                    if o_id == "12":
+                        m_odds[f"Over {line}"] = val
+                    elif o_id == "13":
+                        m_odds[f"Under {line}"] = val
+                elif m_id == "68" and spec.startswith("total="):
+                    line = spec.split("=")[1]
+                    if o_id == "12":
+                        m_odds[f"1st Half Over {line}"] = val
+                    elif o_id == "13":
+                        m_odds[f"1st Half Under {line}"] = val
+                elif m_id == "90" and spec.startswith("total="):
+                    line = spec.split("=")[1]
+                    if o_id == "12":
+                        m_odds[f"2nd Half Over {line}"] = val
+                    elif o_id == "13":
+                        m_odds[f"2nd Half Under {line}"] = val
+                elif m_id == "29":
                     if o_id == "74":
                         m_odds["BTTS Yes"] = val
                     elif o_id == "76":
                         m_odds["BTTS No"] = val
-            elif m_id == "11":  # Draw No Bet
-                for o in outcomes:
-                    o_id = str(o.get("id", ""))
-                    val = float(o.get("odds") or 0.0)
-                    if val <= 1.0:
-                        continue
+                elif m_id == "11":
                     if o_id == "4":
                         m_odds["Home DNB"] = val
                     elif o_id == "5":

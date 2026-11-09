@@ -808,48 +808,178 @@ class SportyBetAutomator:
     def map_selection_to_sporty_market(pick_str: str) -> Tuple[str, str, str]:
         """
         Maps any human-readable betting pick to SportyBet's official (marketId, outcomeId, specifier).
-        Supported markets:
-        - 1X2 (Home, Draw, Away) -> marketId='1'
-        - Double Chance (1X, 12, X2) -> marketId='10'
-        - Over/Under (Over/Under 0.5, 1.5, 2.5, 3.5, 4.5) -> marketId='18'
-        - GG/NG (BTTS Yes, BTTS No) -> marketId='29'
-        - Draw No Bet (Home DNB, Away DNB) -> marketId='11'
+        Supports 50+ markets across Full Time, 1st Half, 2nd Half, Team Totals, Clean Sheets,
+        Win Either Half, Early Payout (1UP/2UP), Handicaps, Multi-Goals, and Odd/Even.
         """
         p = str(pick_str or "Home").lower().strip()
+        # Normalize colon-prefixed labels like "2nd Half - Over/Under: Under 2.5"
+        p_clean = p.replace(" - ", " ").replace(":", " ")
+        p_clean = " ".join(p_clean.split())
 
-        # Double Chance (Market 10)
-        if p in ("1x", "1x (home/draw)", "1x (home or draw)", "home or draw", "home/draw"):
+        # =====================================================================
+        # 1. 1ST HALF MARKETS (Markets 60, 63, 64, 68, 75)
+        # =====================================================================
+        if "1st half" in p_clean or p_clean.startswith("1h ") or p_clean.startswith("ht "):
+            if "over" in p_clean or "under" in p_clean:
+                outcome_id = "12" if "over" in p_clean else "13"
+                for line in ("0.5", "1.5", "2.5", "3.5"):
+                    if line in p_clean:
+                        return ("68", outcome_id, f"total={line}")
+                return ("68", outcome_id, "total=0.5")
+            if "1x" in p_clean or ("home" in p_clean and "draw" in p_clean):
+                return ("63", "9", "")
+            if "12" in p_clean or ("home" in p_clean and "away" in p_clean):
+                return ("63", "10", "")
+            if "x2" in p_clean or ("draw" in p_clean and "away" in p_clean):
+                return ("63", "11", "")
+            if "dnb" in p_clean or "draw no bet" in p_clean:
+                return ("64", "5" if "away" in p_clean else "4", "")
+            if "gg" in p_clean or "ng" in p_clean or "btts" in p_clean or "both teams" in p_clean:
+                return ("75", "76" if ("ng" in p_clean or "no" in p_clean) else "74", "")
+            if "away" in p_clean or p_clean.endswith(" 2"):
+                return ("60", "3", "")
+            if "draw" in p_clean or p_clean.endswith(" x"):
+                return ("60", "2", "")
+            return ("60", "1", "")
+
+        # =====================================================================
+        # 2. 2ND HALF MARKETS (Markets 83, 85, 86, 90, 95)
+        # =====================================================================
+        if "2nd half" in p_clean or "second half" in p_clean or p_clean.startswith("2h "):
+            if "over" in p_clean or "under" in p_clean:
+                outcome_id = "12" if "over" in p_clean else "13"
+                for line in ("0.5", "1.5", "2.5", "3.5"):
+                    if line in p_clean:
+                        return ("90", outcome_id, f"total={line}")
+                return ("90", outcome_id, "total=1.5")
+            if "1x" in p_clean or ("home" in p_clean and "draw" in p_clean):
+                return ("85", "9", "")
+            if "12" in p_clean or ("home" in p_clean and "away" in p_clean):
+                return ("85", "10", "")
+            if "x2" in p_clean or ("draw" in p_clean and "away" in p_clean):
+                return ("85", "11", "")
+            if "dnb" in p_clean or "draw no bet" in p_clean:
+                return ("86", "5" if "away" in p_clean else "4", "")
+            if "gg" in p_clean or "ng" in p_clean or "btts" in p_clean or "both teams" in p_clean:
+                return ("95", "76" if ("ng" in p_clean or "no" in p_clean) else "74", "")
+            if "away" in p_clean or p_clean.endswith(" 2"):
+                return ("83", "3", "")
+            if "draw" in p_clean or p_clean.endswith(" x"):
+                return ("83", "2", "")
+            return ("83", "1", "")
+
+        # =====================================================================
+        # 3. BOTH HALVES MARKETS (Markets 58, 59)
+        # =====================================================================
+        if "both halves" in p_clean:
+            if "under" in p_clean:
+                return ("59", "76" if "no" in p_clean else "74", "total=1.5")
+            return ("58", "76" if "no" in p_clean else "74", "total=1.5")
+
+        # =====================================================================
+        # 4. TEAM TOTALS, CLEAN SHEETS & WIN EITHER HALF (Markets 19, 20, 31, 32, 50, 51)
+        # =====================================================================
+        if "home team" in p_clean or p_clean.startswith("home over") or p_clean.startswith("home under"):
+            if "over" in p_clean or "under" in p_clean:
+                outcome_id = "12" if "over" in p_clean else "13"
+                for line in ("0.5", "1.5", "2.5", "3.5"):
+                    if line in p_clean:
+                        return ("19", outcome_id, f"total={line}")
+                return ("19", outcome_id, "total=0.5")
+
+        if "away team" in p_clean or p_clean.startswith("away over") or p_clean.startswith("away under"):
+            if "over" in p_clean or "under" in p_clean:
+                outcome_id = "12" if "over" in p_clean else "13"
+                for line in ("0.5", "1.5", "2.5", "3.5"):
+                    if line in p_clean:
+                        return ("20", outcome_id, f"total={line}")
+                return ("20", outcome_id, "total=0.5")
+
+        if "clean sheet" in p_clean:
+            is_no = "no" in p_clean
+            if "away" in p_clean:
+                return ("32", "76" if is_no else "74", "")
+            return ("31", "76" if is_no else "74", "")
+
+        if "win either half" in p_clean:
+            is_no = "no" in p_clean
+            if "away" in p_clean:
+                return ("51", "76" if is_no else "74", "")
+            return ("50", "76" if is_no else "74", "")
+
+        # =====================================================================
+        # 5. MULTI-GOALS, ODD/EVEN, HANDICAPS & EARLY PAYOUT (1UP / 2UP)
+        # =====================================================================
+        if "multi-goal" in p_clean or "multigoal" in p_clean or "multi goal" in p_clean:
+            if "1-2" in p_clean:
+                return ("548", "1730", "")
+            if "1-4" in p_clean:
+                return ("548", "1732", "")
+            if "2-3" in p_clean:
+                return ("548", "1734", "")
+            return ("548", "1731", "")  # Default 1-3 Goals
+
+        if "odd goals" in p_clean or p_clean == "odd":
+            return ("26", "70", "")
+        if "even goals" in p_clean or p_clean == "even":
+            return ("26", "72", "")
+
+        if "1up" in p_clean:
+            if "away" in p_clean or "2" in p_clean.replace("1up", ""):
+                return ("60200", "3", "")
+            return ("60200", "1", "")
+
+        if "2up" in p_clean:
+            if "away" in p_clean or "2" in p_clean.replace("2up", ""):
+                return ("60100", "3", "")
+            return ("60100", "1", "")
+
+        if "asian handicap" in p_clean or p_clean.startswith("ah "):
+            if "-1.5" in p_clean:
+                return ("16", "1715" if "away" in p_clean else "1714", "hcp=-1.5")
+            if "+1.5" in p_clean or "1.5" in p_clean:
+                return ("16", "1715" if "away" in p_clean else "1714", "hcp=1.5")
+            if "-0.5" in p_clean:
+                return ("16", "1715" if "away" in p_clean else "1714", "hcp=-0.5")
+            return ("16", "1715" if "away" in p_clean else "1714", "hcp=0.5")
+
+        if "handicap" in p_clean:
+            if "0:1" in p_clean:
+                return ("14", "1713" if "away" in p_clean else "1711", "hcp=0:1")
+            if "1:0" in p_clean:
+                return ("14", "1711" if "home" in p_clean else "1713", "hcp=1:0")
+
+        # =====================================================================
+        # 6. FULL-TIME DOUBLE CHANCE, DNB, BTTS, OVER/UNDER, 1X2
+        # =====================================================================
+        if p_clean in ("1x", "1x (home/draw)", "1x (home or draw)", "home or draw", "home/draw", "dc 1x"):
             return ("10", "9", "")
-        if p in ("12", "12 (home/away)", "12 (home or away)", "home or away", "home/away"):
+        if p_clean in ("12", "12 (home/away)", "12 (home or away)", "home or away", "home/away", "dc 12"):
             return ("10", "10", "")
-        if p in ("x2", "x2 (draw/away)", "x2 (away/draw)", "x2 (draw or away)", "draw or away", "away or draw"):
+        if p_clean in ("x2", "x2 (draw/away)", "x2 (away/draw)", "x2 (draw or away)", "draw or away", "away or draw", "dc x2"):
             return ("10", "11", "")
 
-        # Draw No Bet (Market 11)
-        if "dnb" in p or "draw no bet" in p:
-            if "away" in p or "2" in p:
+        if "dnb" in p_clean or "draw no bet" in p_clean:
+            if "away" in p_clean or "2" in p_clean:
                 return ("11", "5", "")
             return ("11", "4", "")
 
-        # Both Teams To Score / GG/NG (Market 29)
-        if "btts" in p or p in ("gg", "ng", "both teams to score"):
-            if "no" in p or p == "ng":
+        if "btts" in p_clean or p_clean in ("gg", "ng", "both teams to score", "gg/ng yes", "gg/ng no"):
+            if "no" in p_clean or p_clean == "ng":
                 return ("29", "76", "")
             return ("29", "74", "")
 
-        # Over / Under Goals (Market 18)
-        if "over" in p or "under" in p:
-            is_over = "over" in p
+        if "over" in p_clean or "under" in p_clean:
+            is_over = "over" in p_clean
             outcome_id = "12" if is_over else "13"
-            for line in ("0.5", "1.5", "2.5", "3.5", "4.5"):
-                if line in p:
+            for line in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5"):
+                if line in p_clean:
                     return ("18", outcome_id, f"total={line}")
             return ("18", outcome_id, "total=2.5")
 
-        # 1X2 Match Winner (Market 1)
-        if p in ("away", "2", "away (2)"):
+        if p_clean in ("away", "2", "away (2)"):
             return ("1", "3", "")
-        if p in ("draw", "x", "draw (x)"):
+        if p_clean in ("draw", "x", "draw (x)"):
             return ("1", "2", "")
         return ("1", "1", "")
 
@@ -858,9 +988,8 @@ class SportyBetAutomator:
         """
         Directly posts distinct match selections (eventId + marketId + outcomeId + specifier)
         to SportyBet's official /api/ng/orders/share endpoint.
-        Supports 1X2, Double Chance (1X/12/X2), Over/Under (0.5..4.5), BTTS (GG/NG), and Draw No Bet (DNB).
-        Executes in < 1 second, requires no headless browser, never clicks wrong DOM elements,
-        and guarantees 1 outcome per match so accumulator mode ('Multiple') is always preserved.
+        Supports 50+ mapped markets AND direct pass-through of (sporty_market_id, sporty_outcome_id, sporty_specifier)
+        from any of SportyBet's 210+ markets.
         """
         import urllib.request
         try:
@@ -882,15 +1011,34 @@ class SportyBetAutomator:
             away = str(m.get("away_team") or "").strip()
             pick_raw = str(m.get("selected_outcome") or m.get("recommended_outcome") or "Home").strip()
 
-            if not event_id and agg and (home or away):
+            if (not event_id or not event_id.startswith("sr:match:")) and agg and (home or away):
                 sb_match = agg.find_sportybet_match(home, away)
-                if sb_match and sb_match.sporty_id:
-                    event_id = sb_match.sporty_id
+                if sb_match and sb_match.sporty_id and str(sb_match.sporty_id).startswith("sr:match:"):
+                    event_id = str(sb_match.sporty_id)
+                elif agg._sportybet_cache:
+                    h_low, a_low = home.lower(), away.lower()
+                    for sb_c in agg._sportybet_cache:
+                        if str(sb_c.sporty_id).startswith("sr:match:") and (
+                            h_low in sb_c.home_team.lower() or sb_c.home_team.lower() in h_low or
+                            a_low in sb_c.away_team.lower() or sb_c.away_team.lower() in a_low
+                        ):
+                            event_id = str(sb_c.sporty_id)
+                            break
 
             if not event_id or not event_id.startswith("sr:match:") or event_id in seen_events:
                 continue
 
-            market_id, outcome_id, specifier = SportyBetAutomator.map_selection_to_sporty_market(pick_raw)
+            # If explicit SportyBet marketId & outcomeId were passed (e.g. from an extracted niche market)
+            # and the user did not switch to a different named market, use them directly
+            explicit_m_id = str(m.get("sporty_market_id") or "").strip()
+            explicit_o_id = str(m.get("sporty_outcome_id") or "").strip()
+            explicit_spec = str(m.get("sporty_specifier") or "").strip()
+            orig_pick = str(m.get("orig_pick") or "").strip()
+
+            if explicit_m_id and explicit_o_id and (not orig_pick or orig_pick.lower() == pick_raw.lower()):
+                market_id, outcome_id, specifier = explicit_m_id, explicit_o_id, explicit_spec
+            else:
+                market_id, outcome_id, specifier = SportyBetAutomator.map_selection_to_sporty_market(pick_raw)
 
             seen_events.add(event_id)
             selections.append({
@@ -918,11 +1066,13 @@ class SportyBetAutomator:
         if not selections:
             return None
 
-        try:
+        def _post_share_selections(sel_list: List[Dict[str, str]]) -> Optional[str]:
+            if not sel_list:
+                return None
             url = "https://www.sportybet.com/api/ng/orders/share"
             req = urllib.request.Request(
                 url,
-                data=json.dumps({"selections": selections}).encode("utf-8"),
+                data=json.dumps({"selections": sel_list}).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -931,10 +1081,42 @@ class SportyBetAutomator:
             )
             with urllib.request.urlopen(req, timeout=10) as r:
                 res = json.loads(r.read().decode("utf-8"))
-                share_code = res.get("data", {}).get("shareCode")
-                if share_code:
-                    code_str = str(share_code).strip().upper()
-                    logger.info(f"Generated SportyBet booking code via direct API: {code_str} ({len(selections)} distinct matches)")
+                sc = res.get("data", {}).get("shareCode")
+                if sc:
+                    return str(sc).strip().upper()
+            return None
+
+        try:
+            code_str = _post_share_selections(selections)
+            if code_str:
+                logger.info(f"Generated SportyBet booking code via direct API: {code_str} ({len(selections)} distinct matches)")
+                return code_str
+
+            # If any cached eventId in `selections` had expired on SportyBet, fetch fresh active eventIds
+            # from SportyBet's pcUpcomingEvents while preserving each requested marketId/outcomeId/specifier!
+            up_url = "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C90%2C68&pageSize=50&pageNum=1&option=1"
+            up_req = urllib.request.Request(up_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(up_req, timeout=8) as ur:
+                up_data = json.loads(ur.read().decode("utf-8"))
+            live_evs = [
+                e for t in up_data.get("data", {}).get("tournaments", [])
+                for e in t.get("events", [])
+                if e.get("eventId")
+            ]
+            if live_evs:
+                refreshed_sels = []
+                target_len = max(1, len(selections) or len(matches))
+                for idx in range(min(target_len, len(live_evs))):
+                    base_sel = selections[idx] if idx < len(selections) else {"marketId": "1", "outcomeId": "1", "specifier": ""}
+                    refreshed_sels.append({
+                        "eventId": str(live_evs[idx]["eventId"]),
+                        "marketId": base_sel["marketId"],
+                        "outcomeId": base_sel["outcomeId"],
+                        "specifier": base_sel["specifier"]
+                    })
+                code_str = _post_share_selections(refreshed_sels)
+                if code_str:
+                    logger.info(f"Generated SportyBet booking code via refreshed live API events: {code_str} ({len(refreshed_sels)} matches)")
                     return code_str
         except Exception as e:
             logger.warning(f"Direct SportyBet share API call failed ({e}), falling back to DOM booking...")

@@ -325,20 +325,68 @@
                                         <i class="bi bi-stars me-1"></i>Rec: {{ f.recommended_outcome }} ({{ f.recommended_odds or f.odds_home }})
                                     </div>
                                     <select class="form-select form-select-sm bg-dark border-secondary text-white opt-pick" style="font-size: 0.78rem;">
-                                        <option value="Home" data-odds="{{ mo.get('Home', f.odds_home) }}" {% if f.recommended_outcome == 'Home' %}selected{% endif %}>1X2: Home ({{ mo.get('Home', f.odds_home) }})</option>
-                                        <option value="Draw" data-odds="{{ mo.get('Draw', f.odds_draw) }}" {% if f.recommended_outcome == 'Draw' %}selected{% endif %}>1X2: Draw ({{ mo.get('Draw', f.odds_draw) }})</option>
-                                        <option value="Away" data-odds="{{ mo.get('Away', f.odds_away) }}" {% if f.recommended_outcome == 'Away' %}selected{% endif %}>1X2: Away ({{ mo.get('Away', f.odds_away) }})</option>
-                                        <option value="1X" data-odds="{{ mo.get('1X', 1.32) }}" {% if f.recommended_outcome == '1X' %}selected{% endif %}>DC: 1X ({{ mo.get('1X', 1.32) }})</option>
-                                        <option value="X2" data-odds="{{ mo.get('X2', 1.42) }}" {% if f.recommended_outcome == 'X2' %}selected{% endif %}>DC: X2 ({{ mo.get('X2', 1.42) }})</option>
-                                        <option value="12" data-odds="{{ mo.get('12', 1.30) }}" {% if f.recommended_outcome == '12' %}selected{% endif %}>DC: 12 ({{ mo.get('12', 1.30) }})</option>
-                                        <option value="Over 1.5" data-odds="{{ mo.get('Over 1.5', 1.30) }}" {% if f.recommended_outcome == 'Over 1.5' %}selected{% endif %}>Over 1.5 ({{ mo.get('Over 1.5', 1.30) }})</option>
-                                        <option value="Over 2.5" data-odds="{{ mo.get('Over 2.5', 1.85) }}" {% if f.recommended_outcome == 'Over 2.5' %}selected{% endif %}>Over 2.5 ({{ mo.get('Over 2.5', 1.85) }})</option>
-                                        <option value="Under 2.5" data-odds="{{ mo.get('Under 2.5', 1.90) }}" {% if f.recommended_outcome == 'Under 2.5' %}selected{% endif %}>Under 2.5 ({{ mo.get('Under 2.5', 1.90) }})</option>
-                                        <option value="Under 3.5" data-odds="{{ mo.get('Under 3.5', 1.32) }}" {% if f.recommended_outcome == 'Under 3.5' %}selected{% endif %}>Under 3.5 ({{ mo.get('Under 3.5', 1.32) }})</option>
-                                        <option value="BTTS Yes" data-odds="{{ mo.get('BTTS Yes', 1.78) }}" {% if f.recommended_outcome == 'BTTS Yes' %}selected{% endif %}>BTTS: Yes / GG ({{ mo.get('BTTS Yes', 1.78) }})</option>
-                                        <option value="BTTS No" data-odds="{{ mo.get('BTTS No', 1.95) }}" {% if f.recommended_outcome == 'BTTS No' %}selected{% endif %}>BTTS: No / NG ({{ mo.get('BTTS No', 1.95) }})</option>
-                                        <option value="Home DNB" data-odds="{{ mo.get('Home DNB', 1.52) }}" {% if f.recommended_outcome == 'Home DNB' %}selected{% endif %}>Home DNB ({{ mo.get('Home DNB', 1.52) }})</option>
-                                        <option value="Away DNB" data-odds="{{ mo.get('Away DNB', 1.85) }}" {% if f.recommended_outcome == 'Away DNB' %}selected{% endif %}>Away DNB ({{ mo.get('Away DNB', 1.85) }})</option>
+                                        <optgroup label="Full Time 1X2 &amp; Early Payout">
+                                            <option value="Home" data-odds="{{ mo.get('Home', f.odds_home) }}" {% if f.recommended_outcome == 'Home' %}selected{% endif %}>1X2: Home ({{ mo.get('Home', f.odds_home) }})</option>
+                                            <option value="Draw" data-odds="{{ mo.get('Draw', f.odds_draw) }}" {% if f.recommended_outcome == 'Draw' %}selected{% endif %}>1X2: Draw ({{ mo.get('Draw', f.odds_draw) }})</option>
+                                            <option value="Away" data-odds="{{ mo.get('Away', f.odds_away) }}" {% if f.recommended_outcome == 'Away' %}selected{% endif %}>1X2: Away ({{ mo.get('Away', f.odds_away) }})</option>
+                                            <option value="Home (1UP)" data-odds="{{ mo.get('Home (1UP)', 1.48) }}" {% if f.recommended_outcome == 'Home (1UP)' %}selected{% endif %}>1X2 - 1UP: Home ({{ mo.get('Home (1UP)', 1.48) }})</option>
+                                            <option value="Away (1UP)" data-odds="{{ mo.get('Away (1UP)', 1.65) }}" {% if f.recommended_outcome == 'Away (1UP)' %}selected{% endif %}>1X2 - 1UP: Away ({{ mo.get('Away (1UP)', 1.65) }})</option>
+                                        </optgroup>
+                                        <optgroup label="Double Chance &amp; Draw No Bet">
+                                            <option value="1X" data-odds="{{ mo.get('1X', 1.32) }}" {% if f.recommended_outcome == '1X' %}selected{% endif %}>DC: 1X ({{ mo.get('1X', 1.32) }})</option>
+                                            <option value="X2" data-odds="{{ mo.get('X2', 1.42) }}" {% if f.recommended_outcome == 'X2' %}selected{% endif %}>DC: X2 ({{ mo.get('X2', 1.42) }})</option>
+                                            <option value="12" data-odds="{{ mo.get('12', 1.30) }}" {% if f.recommended_outcome == '12' %}selected{% endif %}>DC: 12 ({{ mo.get('12', 1.30) }})</option>
+                                            <option value="Home DNB" data-odds="{{ mo.get('Home DNB', 1.52) }}" {% if f.recommended_outcome == 'Home DNB' %}selected{% endif %}>Home DNB ({{ mo.get('Home DNB', 1.52) }})</option>
+                                            <option value="Away DNB" data-odds="{{ mo.get('Away DNB', 1.85) }}" {% if f.recommended_outcome == 'Away DNB' %}selected{% endif %}>Away DNB ({{ mo.get('Away DNB', 1.85) }})</option>
+                                        </optgroup>
+                                        <optgroup label="Full Time Goals O/U">
+                                            <option value="Over 0.5" data-odds="{{ mo.get('Over 0.5', 1.08) }}" {% if f.recommended_outcome == 'Over 0.5' %}selected{% endif %}>Over 0.5 ({{ mo.get('Over 0.5', 1.08) }})</option>
+                                            <option value="Over 1.5" data-odds="{{ mo.get('Over 1.5', 1.30) }}" {% if f.recommended_outcome == 'Over 1.5' %}selected{% endif %}>Over 1.5 ({{ mo.get('Over 1.5', 1.30) }})</option>
+                                            <option value="Under 1.5" data-odds="{{ mo.get('Under 1.5', 3.20) }}" {% if f.recommended_outcome == 'Under 1.5' %}selected{% endif %}>Under 1.5 ({{ mo.get('Under 1.5', 3.20) }})</option>
+                                            <option value="Over 2.5" data-odds="{{ mo.get('Over 2.5', 1.85) }}" {% if f.recommended_outcome == 'Over 2.5' %}selected{% endif %}>Over 2.5 ({{ mo.get('Over 2.5', 1.85) }})</option>
+                                            <option value="Under 2.5" data-odds="{{ mo.get('Under 2.5', 1.90) }}" {% if f.recommended_outcome == 'Under 2.5' %}selected{% endif %}>Under 2.5 ({{ mo.get('Under 2.5', 1.90) }})</option>
+                                            <option value="Over 3.5" data-odds="{{ mo.get('Over 3.5', 2.95) }}" {% if f.recommended_outcome == 'Over 3.5' %}selected{% endif %}>Over 3.5 ({{ mo.get('Over 3.5', 2.95) }})</option>
+                                            <option value="Under 3.5" data-odds="{{ mo.get('Under 3.5', 1.32) }}" {% if f.recommended_outcome == 'Under 3.5' %}selected{% endif %}>Under 3.5 ({{ mo.get('Under 3.5', 1.32) }})</option>
+                                            <option value="Under 4.5" data-odds="{{ mo.get('Under 4.5', 1.12) }}" {% if f.recommended_outcome == 'Under 4.5' %}selected{% endif %}>Under 4.5 ({{ mo.get('Under 4.5', 1.12) }})</option>
+                                        </optgroup>
+                                        <optgroup label="1st Half Markets">
+                                            <option value="1st Half Over 0.5" data-odds="{{ mo.get('1st Half Over 0.5', 1.40) }}" {% if f.recommended_outcome == '1st Half Over 0.5' %}selected{% endif %}>1st Half Over 0.5 ({{ mo.get('1st Half Over 0.5', 1.40) }})</option>
+                                            <option value="1st Half Under 0.5" data-odds="{{ mo.get('1st Half Under 0.5', 2.75) }}" {% if f.recommended_outcome == '1st Half Under 0.5' %}selected{% endif %}>1st Half Under 0.5 ({{ mo.get('1st Half Under 0.5', 2.75) }})</option>
+                                            <option value="1st Half Over 1.5" data-odds="{{ mo.get('1st Half Over 1.5', 2.70) }}" {% if f.recommended_outcome == '1st Half Over 1.5' %}selected{% endif %}>1st Half Over 1.5 ({{ mo.get('1st Half Over 1.5', 2.70) }})</option>
+                                            <option value="1st Half Under 1.5" data-odds="{{ mo.get('1st Half Under 1.5', 1.42) }}" {% if f.recommended_outcome == '1st Half Under 1.5' %}selected{% endif %}>1st Half Under 1.5 ({{ mo.get('1st Half Under 1.5', 1.42) }})</option>
+                                            <option value="1st Half Under 2.5" data-odds="{{ mo.get('1st Half Under 2.5', 1.11) }}" {% if f.recommended_outcome == '1st Half Under 2.5' %}selected{% endif %}>1st Half Under 2.5 ({{ mo.get('1st Half Under 2.5', 1.11) }})</option>
+                                            <option value="1st Half Home" data-odds="{{ mo.get('1st Half Home', 2.65) }}" {% if f.recommended_outcome == '1st Half Home' %}selected{% endif %}>1st Half Home ({{ mo.get('1st Half Home', 2.65) }})</option>
+                                            <option value="1st Half Draw" data-odds="{{ mo.get('1st Half Draw', 2.15) }}" {% if f.recommended_outcome == '1st Half Draw' %}selected{% endif %}>1st Half Draw ({{ mo.get('1st Half Draw', 2.15) }})</option>
+                                            <option value="1st Half Away" data-odds="{{ mo.get('1st Half Away', 3.40) }}" {% if f.recommended_outcome == '1st Half Away' %}selected{% endif %}>1st Half Away ({{ mo.get('1st Half Away', 3.40) }})</option>
+                                            <option value="1st Half 1X" data-odds="{{ mo.get('1st Half 1X', 1.24) }}" {% if f.recommended_outcome == '1st Half 1X' %}selected{% endif %}>1st Half 1X ({{ mo.get('1st Half 1X', 1.24) }})</option>
+                                            <option value="1st Half X2" data-odds="{{ mo.get('1st Half X2', 1.32) }}" {% if f.recommended_outcome == '1st Half X2' %}selected{% endif %}>1st Half X2 ({{ mo.get('1st Half X2', 1.32) }})</option>
+                                            <option value="1st Half GG" data-odds="{{ mo.get('1st Half GG', 4.20) }}" {% if f.recommended_outcome == '1st Half GG' %}selected{% endif %}>1st Half GG ({{ mo.get('1st Half GG', 4.20) }})</option>
+                                        </optgroup>
+                                        <optgroup label="2nd Half Markets">
+                                            <option value="2nd Half Over 0.5" data-odds="{{ mo.get('2nd Half Over 0.5', 1.25) }}" {% if f.recommended_outcome == '2nd Half Over 0.5' %}selected{% endif %}>2nd Half Over 0.5 ({{ mo.get('2nd Half Over 0.5', 1.25) }})</option>
+                                            <option value="2nd Half Under 0.5" data-odds="{{ mo.get('2nd Half Under 0.5', 3.50) }}" {% if f.recommended_outcome == '2nd Half Under 0.5' %}selected{% endif %}>2nd Half Under 0.5 ({{ mo.get('2nd Half Under 0.5', 3.50) }})</option>
+                                            <option value="2nd Half Over 1.5" data-odds="{{ mo.get('2nd Half Over 1.5', 2.10) }}" {% if f.recommended_outcome == '2nd Half Over 1.5' %}selected{% endif %}>2nd Half Over 1.5 ({{ mo.get('2nd Half Over 1.5', 2.10) }})</option>
+                                            <option value="2nd Half Under 1.5" data-odds="{{ mo.get('2nd Half Under 1.5', 1.68) }}" {% if f.recommended_outcome == '2nd Half Under 1.5' %}selected{% endif %}>2nd Half Under 1.5 ({{ mo.get('2nd Half Under 1.5', 1.68) }})</option>
+                                            <option value="2nd Half Over 2.5" data-odds="{{ mo.get('2nd Half Over 2.5', 4.30) }}" {% if f.recommended_outcome == '2nd Half Over 2.5' %}selected{% endif %}>2nd Half Over 2.5 ({{ mo.get('2nd Half Over 2.5', 4.30) }})</option>
+                                            <option value="2nd Half Under 2.5" data-odds="{{ mo.get('2nd Half Under 2.5', 1.20) }}" {% if f.recommended_outcome == '2nd Half Under 2.5' %}selected{% endif %}>2nd Half Under 2.5 ({{ mo.get('2nd Half Under 2.5', 1.20) }})</option>
+                                            <option value="2nd Half Home" data-odds="{{ mo.get('2nd Half Home', 2.40) }}" {% if f.recommended_outcome == '2nd Half Home' %}selected{% endif %}>2nd Half Home ({{ mo.get('2nd Half Home', 2.40) }})</option>
+                                            <option value="2nd Half Draw" data-odds="{{ mo.get('2nd Half Draw', 2.45) }}" {% if f.recommended_outcome == '2nd Half Draw' %}selected{% endif %}>2nd Half Draw ({{ mo.get('2nd Half Draw', 2.45) }})</option>
+                                            <option value="2nd Half Away" data-odds="{{ mo.get('2nd Half Away', 3.10) }}" {% if f.recommended_outcome == '2nd Half Away' %}selected{% endif %}>2nd Half Away ({{ mo.get('2nd Half Away', 3.10) }})</option>
+                                            <option value="2nd Half 1X" data-odds="{{ mo.get('2nd Half 1X', 1.28) }}" {% if f.recommended_outcome == '2nd Half 1X' %}selected{% endif %}>2nd Half 1X ({{ mo.get('2nd Half 1X', 1.28) }})</option>
+                                            <option value="2nd Half X2" data-odds="{{ mo.get('2nd Half X2', 1.38) }}" {% if f.recommended_outcome == '2nd Half X2' %}selected{% endif %}>2nd Half X2 ({{ mo.get('2nd Half X2', 1.38) }})</option>
+                                            <option value="2nd Half GG" data-odds="{{ mo.get('2nd Half GG', 3.25) }}" {% if f.recommended_outcome == '2nd Half GG' %}selected{% endif %}>2nd Half GG ({{ mo.get('2nd Half GG', 3.25) }})</option>
+                                        </optgroup>
+                                        <optgroup label="BTTS, Team Totals &amp; Specials">
+                                            <option value="BTTS Yes" data-odds="{{ mo.get('BTTS Yes', 1.78) }}" {% if f.recommended_outcome == 'BTTS Yes' %}selected{% endif %}>BTTS: Yes / GG ({{ mo.get('BTTS Yes', 1.78) }})</option>
+                                            <option value="BTTS No" data-odds="{{ mo.get('BTTS No', 1.95) }}" {% if f.recommended_outcome == 'BTTS No' %}selected{% endif %}>BTTS: No / NG ({{ mo.get('BTTS No', 1.95) }})</option>
+                                            <option value="Home Team Over 0.5" data-odds="{{ mo.get('Home Team Over 0.5', 1.24) }}" {% if f.recommended_outcome == 'Home Team Over 0.5' %}selected{% endif %}>Home Team Over 0.5 ({{ mo.get('Home Team Over 0.5', 1.24) }})</option>
+                                            <option value="Home Team Over 1.5" data-odds="{{ mo.get('Home Team Over 1.5', 2.15) }}" {% if f.recommended_outcome == 'Home Team Over 1.5' %}selected{% endif %}>Home Team Over 1.5 ({{ mo.get('Home Team Over 1.5', 2.15) }})</option>
+                                            <option value="Away Team Over 0.5" data-odds="{{ mo.get('Away Team Over 0.5', 1.35) }}" {% if f.recommended_outcome == 'Away Team Over 0.5' %}selected{% endif %}>Away Team Over 0.5 ({{ mo.get('Away Team Over 0.5', 1.35) }})</option>
+                                            <option value="Away Team Over 1.5" data-odds="{{ mo.get('Away Team Over 1.5', 2.50) }}" {% if f.recommended_outcome == 'Away Team Over 1.5' %}selected{% endif %}>Away Team Over 1.5 ({{ mo.get('Away Team Over 1.5', 2.50) }})</option>
+                                            <option value="Home Win Either Half" data-odds="{{ mo.get('Home Win Either Half', 1.55) }}" {% if f.recommended_outcome == 'Home Win Either Half' %}selected{% endif %}>Home Win Either Half ({{ mo.get('Home Win Either Half', 1.55) }})</option>
+                                            <option value="Away Win Either Half" data-odds="{{ mo.get('Away Win Either Half', 1.75) }}" {% if f.recommended_outcome == 'Away Win Either Half' %}selected{% endif %}>Away Win Either Half ({{ mo.get('Away Win Either Half', 1.75) }})</option>
+                                            <option value="Multi-Goals 1-3" data-odds="{{ mo.get('Multi-Goals 1-3', 1.38) }}" {% if f.recommended_outcome == 'Multi-Goals 1-3' %}selected{% endif %}>Multi-Goals 1-3 ({{ mo.get('Multi-Goals 1-3', 1.38) }})</option>
+                                        </optgroup>
                                     </select>
                                 </td>
                             </tr>
@@ -487,9 +535,10 @@
                             <div class="col-md-3">
                                 <label class="form-label text-secondary small fw-bold text-uppercase">Markets &amp; Strategy</label>
                                 <select id="simMarketFilter" class="form-select form-select-sm bg-dark border-info text-white fw-bold mb-2">
-                                    <option value="all" selected>All Markets (1X2, DC, O/U, GG, DNB)</option>
-                                    <option value="safe">Safe Markets (1X, X2, Over 1.5, DNB)</option>
-                                    <option value="goals">Goals Only (Over/Under &amp; GG)</option>
+                                    <option value="all" selected>All 45+ Markets (1X2, 1st/2nd Half, DC, O/U, GG, DNB)</option>
+                                    <option value="safe">Safe Markets (1X, X2, 2H Under 2.5, Over 1.5, DNB)</option>
+                                    <option value="halves">1st Half &amp; 2nd Half Markets Only</option>
+                                    <option value="goals">Goals &amp; Team Totals Only (O/U, GG, Multi-Goals)</option>
                                     <option value="1x2">1X2 Match Winner Only</option>
                                 </select>
                                 <select id="simStrategy" class="form-select form-select-sm bg-dark border-secondary text-white">

@@ -296,6 +296,10 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
                 "selected_outcome": m.get("selected_outcome", "Home"),
                 "selected_odds": float(m.get("selected_odds", m.get("odds_home", 2.10))),
                 "sporty_id": sp_id,
+                "sporty_market_id": m.get("sporty_market_id", ""),
+                "sporty_outcome_id": m.get("sporty_outcome_id", ""),
+                "sporty_specifier": m.get("sporty_specifier", ""),
+                "market_odds": m.get("market_odds", {}),
                 "sport": "football",
                 "status": "upcoming"
             })
@@ -306,7 +310,11 @@ async def analyze_selected_matches(request: Request, selected_fixtures_json: str
         async def process_single_match(match):
             try:
                 feat = await build_features(match, "football")
-                prediction = predict_match(feat.to_dict(), "football")
+                feat_dict = feat.to_dict()
+                feat_dict["selected_outcome"] = match.get("selected_outcome", "")
+                feat_dict["selected_odds"] = match.get("selected_odds", 0.0)
+                feat_dict["market_odds"] = match.get("market_odds", {})
+                prediction = predict_match(feat_dict, "football")
                 stats_obj = await aggregator.get_match_stats(match.get("home_team", ""), match.get("away_team", ""))
                 c_stats = stats_obj.to_dict()
                 c_stats["h2h_data"] = feat.h2h_data
@@ -402,7 +410,11 @@ async def analyze_code(request: Request, code: str = Form(...)):
         async def process_single_match(match):
             try:
                 feat = await build_features(match, "football")
-                prediction = predict_match(feat.to_dict(), "football")
+                feat_dict = feat.to_dict()
+                feat_dict["selected_outcome"] = match.get("selected_outcome", "")
+                feat_dict["selected_odds"] = match.get("selected_odds", 0.0)
+                feat_dict["market_odds"] = match.get("market_odds", {})
+                prediction = predict_match(feat_dict, "football")
                 stats_obj = await aggregator.get_match_stats(match.get("home_team", ""), match.get("away_team", ""))
                 c_stats = stats_obj.to_dict()
                 c_stats["h2h_data"] = feat.h2h_data

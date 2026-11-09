@@ -319,14 +319,40 @@ class SportyBetScraper:
                         away_team = parts[1].strip()
                         break
 
+        # Extract market (.m-item-market) and outcome (.m-item-play) explicitly so half-time/2nd-half/team markets are preserved
+        market_text = ""
+        play_text = ""
+        try:
+            market_el = await item.query_selector(".m-item-market, [data-testid='market-name']")
+            if market_el:
+                market_text = (await market_el.inner_text()).strip()
+            play_el = await item.query_selector(".m-item-play, [data-testid='outcome-name']")
+            if play_el:
+                play_text = (await play_el.inner_text()).strip()
+                if "@" in play_text:
+                    play_text = play_text.split("@")[0].strip()
+        except Exception:
+            pass
+
+        if market_text or play_text:
+            try:
+                try:
+                    from .code_reader import normalize_sportybet_selection
+                except ImportError:
+                    from code_reader import normalize_sportybet_selection
+                selected_outcome = normalize_sportybet_selection(market_text, play_text)
+            except Exception:
+                selected_outcome = f"{market_text}: {play_text}" if (market_text and play_text) else (play_text or market_text)
+
         if lines:
-            # Check for known outcome keywords first
-            for l in lines:
-                if l.strip().lower() in ["home", "away", "draw", "1", "x", "2", "over", "under", "yes", "no"]:
-                    selected_outcome = l.strip()
-                    break
-            if not selected_outcome and lines:
-                selected_outcome = lines[0]
+            if not selected_outcome:
+                # Check for known outcome keywords only if explicit DOM elements were absent
+                for l in lines:
+                    if l.strip().lower() in ["home", "away", "draw", "1", "x", "2", "over", "under", "yes", "no"]:
+                        selected_outcome = l.strip()
+                        break
+                if not selected_outcome and lines:
+                    selected_outcome = lines[0]
 
             import re
             for l in lines:

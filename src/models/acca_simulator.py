@@ -72,8 +72,26 @@ class AccaSimulator:
             p_dnb_a = p_a / max(0.1, p_h + p_a)
             p_ov15 = min(0.88, 0.72 + 0.15 * abs(p_h - p_a))
             p_ov25 = min(0.75, 0.48 + 0.18 * abs(p_h - p_a))
+            p_un25 = max(0.25, 1.0 - p_ov25)
             p_un35 = min(0.88, 0.74 - 0.10 * abs(p_h - p_a))
             p_btts_y = min(0.72, 0.54 - 0.15 * abs(p_h - p_a))
+            p_btts_n = max(0.28, 1.0 - p_btts_y)
+
+            # 1st Half & 2nd Half & Team / Special probabilities
+            p_1h_o05 = min(0.82, 0.66 + 0.12 * abs(p_h - p_a))
+            p_1h_u15 = min(0.86, 0.74 - 0.08 * abs(p_h - p_a))
+            p_1h_1x = min(0.92, p_h * 0.65 + 0.44)
+            p_1h_x2 = min(0.92, p_a * 0.65 + 0.44)
+            p_2h_o05 = min(0.86, 0.73 + 0.12 * abs(p_h - p_a))
+            p_2h_u15 = min(0.80, 0.66 - 0.10 * abs(p_h - p_a))
+            p_2h_u25 = min(0.92, 0.85 - 0.08 * abs(p_h - p_a))
+            p_2h_1x = min(0.90, p_h * 0.70 + 0.39)
+            p_2h_x2 = min(0.90, p_a * 0.70 + 0.39)
+            p_h_1up = min(0.92, p_h + p_d * 0.32)
+            p_a_1up = min(0.92, p_a + p_d * 0.30)
+            p_h_o05 = min(0.88, 0.55 + p_h * 0.45)
+            p_a_o05 = min(0.88, 0.52 + p_a * 0.45)
+            p_mg_13 = min(0.82, 0.73)
 
             def get_m_odd(k: str, p_est: float, fallback: float = 0.0) -> float:
                 if k in m_odds and float(m_odds[k]) > 1.04:
@@ -86,23 +104,41 @@ class AccaSimulator:
                 ("Home", oh if oh > 1.04 else get_m_odd("Home", p_h), p_h, "1x2"),
                 ("Draw", od if od > 1.04 else get_m_odd("Draw", p_d), p_d, "1x2"),
                 ("Away", oa if oa > 1.04 else get_m_odd("Away", p_a), p_a, "1x2"),
+                ("Home (1UP)", get_m_odd("Home (1UP)", p_h_1up), p_h_1up, "safe"),
+                ("Away (1UP)", get_m_odd("Away (1UP)", p_a_1up), p_a_1up, "safe"),
                 ("1X", get_m_odd("1X", p_1x), p_1x, "safe"),
                 ("X2", get_m_odd("X2", p_x2), p_x2, "safe"),
                 ("12", get_m_odd("12", p_12), p_12, "safe"),
                 ("Over 1.5", get_m_odd("Over 1.5", p_ov15), p_ov15, "goals"),
                 ("Over 2.5", get_m_odd("Over 2.5", p_ov25), p_ov25, "goals"),
+                ("Under 2.5", get_m_odd("Under 2.5", p_un25), p_un25, "goals"),
                 ("Under 3.5", get_m_odd("Under 3.5", p_un35), p_un35, "goals"),
                 ("BTTS Yes", get_m_odd("BTTS Yes", p_btts_y), p_btts_y, "goals"),
+                ("BTTS No", get_m_odd("BTTS No", p_btts_n), p_btts_n, "goals"),
                 ("Home DNB", get_m_odd("Home DNB", p_dnb_h), p_dnb_h, "safe"),
                 ("Away DNB", get_m_odd("Away DNB", p_dnb_a), p_dnb_a, "safe"),
+                ("1st Half Over 0.5", get_m_odd("1st Half Over 0.5", p_1h_o05), p_1h_o05, "halves"),
+                ("1st Half Under 1.5", get_m_odd("1st Half Under 1.5", p_1h_u15), p_1h_u15, "halves"),
+                ("1st Half 1X", get_m_odd("1st Half 1X", p_1h_1x), p_1h_1x, "halves"),
+                ("1st Half X2", get_m_odd("1st Half X2", p_1h_x2), p_1h_x2, "halves"),
+                ("2nd Half Over 0.5", get_m_odd("2nd Half Over 0.5", p_2h_o05), p_2h_o05, "halves"),
+                ("2nd Half Under 1.5", get_m_odd("2nd Half Under 1.5", p_2h_u15), p_2h_u15, "halves"),
+                ("2nd Half Under 2.5", get_m_odd("2nd Half Under 2.5", p_2h_u25), p_2h_u25, "halves"),
+                ("2nd Half 1X", get_m_odd("2nd Half 1X", p_2h_1x), p_2h_1x, "halves"),
+                ("2nd Half X2", get_m_odd("2nd Half X2", p_2h_x2), p_2h_x2, "halves"),
+                ("Home Team Over 0.5", get_m_odd("Home Team Over 0.5", p_h_o05), p_h_o05, "goals"),
+                ("Away Team Over 0.5", get_m_odd("Away Team Over 0.5", p_a_o05), p_a_o05, "goals"),
+                ("Multi-Goals 1-3", get_m_odd("Multi-Goals 1-3", p_mg_13), p_mg_13, "goals"),
             ]
 
             if market_filter == "safe":
-                filtered_opts = [o for o in options if o[3] in ("safe", "goals") and o[2] >= 0.60]
+                filtered_opts = [o for o in options if o[3] in ("safe", "goals", "halves") and o[2] >= 0.64]
             elif market_filter == "1x2":
                 filtered_opts = [o for o in options if o[3] == "1x2"]
             elif market_filter == "goals":
-                filtered_opts = [o for o in options if o[3] == "goals"]
+                filtered_opts = [o for o in options if o[3] in ("goals", "halves")]
+            elif market_filter == "halves":
+                filtered_opts = [o for o in options if o[3] == "halves"]
             else:
                 filtered_opts = options
 
