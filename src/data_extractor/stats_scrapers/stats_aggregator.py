@@ -744,6 +744,8 @@ class StatsAggregator:
                 "odds_draw": od,
                 "odds_away": oa,
                 "market_odds": m_odds,
+                "match_time": getattr(sb, "match_time", "") or "",
+                "start_time_ts": getattr(sb, "start_time_ts", 0) or 0,
                 "sources": ["SportyBet"],
                 "has_sportybet_odds": True,
                 "odds_verified": True,
@@ -766,6 +768,8 @@ class StatsAggregator:
                     fixtures_map[existing_key]["sources"].append("Forebet")
                 fixtures_map[existing_key]["forebet_score"] = fb.predicted_score
                 fixtures_map[existing_key]["forebet_probs"] = f"H:{fb.prob_home}% D:{fb.prob_draw}% A:{fb.prob_away}%"
+                if not fixtures_map[existing_key].get("match_time") and getattr(fb, "match_time", ""):
+                    fixtures_map[existing_key]["match_time"] = fb.match_time
                 if fb.tip in ["1", "X", "2"]:
                     fixtures_map[existing_key]["recommended_outcome"] = determine_recommended_outcome(
                         fixtures_map[existing_key]["odds_home"],
@@ -806,7 +810,9 @@ class StatsAggregator:
                     "predictz_tip": "",
                     "matchoutlook_tip": "",
                     "recommended_outcome": rec,
-                    "sporty_id": sb_match.sporty_id if sb_match else ""
+                    "sporty_id": sb_match.sporty_id if sb_match else "",
+                    "match_time": getattr(sb_match, "match_time", "") if sb_match else (getattr(fb, "match_time", "") or ""),
+                    "start_time_ts": getattr(sb_match, "start_time_ts", 0) if sb_match else 0
                 }
 
         # 3. Ingest PredictZ
@@ -861,7 +867,9 @@ class StatsAggregator:
                     "predictz_tip": tip_text,
                     "matchoutlook_tip": "",
                     "recommended_outcome": rec,
-                    "sporty_id": sb_match.sporty_id if sb_match else ""
+                    "sporty_id": sb_match.sporty_id if sb_match else "",
+                    "match_time": getattr(sb_match, "match_time", "") if sb_match else "",
+                    "start_time_ts": getattr(sb_match, "start_time_ts", 0) if sb_match else 0
                 }
 
         # 4. Ingest ScoreGPT
@@ -909,7 +917,9 @@ class StatsAggregator:
                     "predictz_tip": "",
                     "matchoutlook_tip": "",
                     "recommended_outcome": rec,
-                    "sporty_id": sb_match.sporty_id if sb_match else ""
+                    "sporty_id": sb_match.sporty_id if sb_match else "",
+                    "match_time": getattr(sb_match, "match_time", "") if sb_match else "",
+                    "start_time_ts": getattr(sb_match, "start_time_ts", 0) if sb_match else 0
                 }
 
         # 5. Ingest Betensured
@@ -957,7 +967,9 @@ class StatsAggregator:
                     "predictz_tip": "",
                     "matchoutlook_tip": "",
                     "recommended_outcome": rec,
-                    "sporty_id": sb_match.sporty_id if sb_match else ""
+                    "sporty_id": sb_match.sporty_id if sb_match else "",
+                    "match_time": getattr(sb_match, "match_time", "") if sb_match else "",
+                    "start_time_ts": getattr(sb_match, "start_time_ts", 0) if sb_match else 0
                 }
 
         # 6. Ingest MatchOutlook
@@ -988,10 +1000,32 @@ class StatsAggregator:
             rec = item.get("recommended_outcome") or "Home"
             item["recommended_odds"] = m_odds.get(rec, item["odds_home"])
 
-        # Sort so fixtures with SportyBet & high source consensus appear at the top
-        fixture_list.sort(key=lambda x: (1 if "SportyBet" in x["sources"] else 0, len(x["sources"]), x["league"]), reverse=True)
-        self._catalog_cache = fixture_list
-        return fixture_list
+        now_sec = time.time()
+        # Filter out matches ended > 2 hours ago
+        active_fixtures = []
+        for item in fixture_list:
+            st = item.get("start_time_ts", 0)
+            if st > 0 and st < (now_sec - 7200):
+                continue
+            active_fixtures.append(item)
+
+        # Sort chronologically so matches starting TODAY / near-term from current time appear FIRST!
+        def fixture_sort_key(x):
+            st = x.get("start_time_ts", 0)
+            is_sporty = 0 if "SportyBet" in x.get("sources", []) else 1
+            if st <= 0:
+                # If no timestamp, place after today's scheduled matches
+                return (2, is_sporty, 9999999999, -len(x.get("sources", [])))
+            diff_h = (st - now_sec) / 3600.0
+            # Tier 0: Starting within the next 24 hours (Today / imminent from current time)
+            # Tier 1: Starting within the next 24-48 hours (Tomorrow)
+            # Tier 2: Far future dates
+            tier = 0 if diff_h <= 24.0 else (1 if diff_h <= 48.0 else 2)
+            return (tier, is_sporty, st, -len(x.get("sources", [])))
+
+        active_fixtures.sort(key=fixture_sort_key)
+        self._catalog_cache = active_fixtures
+        return active_fixtures
 
 
 # Global default instance

@@ -1094,8 +1094,8 @@ class SportyBetAutomator:
 
             # If any cached eventId in `selections` had expired on SportyBet, fetch fresh active eventIds
             # from SportyBet's pcUpcomingEvents while preserving each requested marketId/outcomeId/specifier!
-            up_url = "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C90%2C68&pageSize=50&pageNum=1&option=1"
-            up_req = urllib.request.Request(up_url, headers={"User-Agent": "Mozilla/5.0"})
+            up_url = "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C18%2C10%2C29%2C11%2C90%2C68&timeline=24&pageSize=50&pageNum=1&option=1"
+            up_req = urllib.request.Request(up_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"})
             with urllib.request.urlopen(up_req, timeout=8) as ur:
                 up_data = json.loads(ur.read().decode("utf-8"))
             live_evs = [
@@ -1103,6 +1103,7 @@ class SportyBetAutomator:
                 for e in t.get("events", [])
                 if e.get("eventId")
             ]
+            live_evs.sort(key=lambda x: x.get("estimateStartTime", 0))
             if live_evs:
                 refreshed_sels = []
                 target_len = max(1, len(selections) or len(matches))

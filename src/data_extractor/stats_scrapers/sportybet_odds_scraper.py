@@ -38,6 +38,7 @@ class SportyBetFixtureOdds:
     odds_away: float = 0.0
     match_time: str = ""
     sporty_id: str = ""
+    start_time_ts: int = 0
     market_odds: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -54,7 +55,7 @@ class SportyBetOddsScraper:
         "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?"
         "sportId=sr%3Asport%3A1&"
         "marketId=1%2C18%2C10%2C29%2C11%2C26%2C19%2C20%2C31%2C32%2C50%2C51%2C60%2C63%2C64%2C68%2C75%2C83%2C85%2C86%2C90%2C95%2C548%2C60100%2C60200&"
-        "pageSize=100&option=1"
+        "timeline=24&pageSize=100&option=1"
     )
 
     def __init__(self, headless: bool = True, timeout: int = 40000):
@@ -268,17 +269,81 @@ class SportyBetOddsScraper:
         yielding 500+ real 1X2 and Multi-Market bookmaker odds with exact event IDs.
         """
         import time
+        from datetime import datetime
         results: List[SportyBetFixtureOdds] = []
         seen_keys = set()
         timestamp = int(time.time() * 1000)
+        now_sec = time.time()
+        now_dt = datetime.now()
 
-        # 1. Fetch upcoming tournament events (pages 1 to 6, 100 events per page)
-        for page_num in range(1, 7):
+        def _format_match_time(est_start_ms: int) -> Tuple[str, int]:
+            if not est_start_ms or est_start_ms <= 0:
+                return "", 0
+            ts_sec = int(est_start_ms / 1000)
+            try:
+                dt = datetime.fromtimestamp(ts_sec)
+                if dt.date() == now_dt.date():
+                    return f"Today {dt.strftime('%H:%M')}", ts_sec
+                elif (dt.date() - now_dt.date()).days == 1:
+                    return f"Tomorrow {dt.strftime('%H:%M')}", ts_sec
+                else:
+                    return dt.strftime("%b %d %H:%M"), ts_sec
+            except Exception:
+                return "", ts_sec
+
+        # 1. Fetch live and imminent pre-match events (timeline=24) first
+        try:
+            live_url = f"https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&timeline=24&_t={timestamp}"
+            req = urllib.request.Request(
+                live_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode("utf-8"))
+
+            for group in data.get("data", []):
+                league_name = group.get("categoryName") or group.get("tournamentName") or "Football"
+                for ev in group.get("events", []):
+                    home = ev.get("homeTeamName")
+                    away = ev.get("awayTeamName")
+                    if not home or not away:
+                        continue
+                    pair_key = f"{home.lower()}_vs_{away.lower()}"
+                    if pair_key in seen_keys:
+                        continue
+
+                    est_start = int(ev.get("estimateStartTime") or 0)
+                    m_time_str, st_ts = _format_match_time(est_start)
+
+                    # Exclude matches ended >30m ago
+                    if st_ts > 0 and st_ts < (now_sec - 1800):
+                        continue
+
+                    h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
+                    if h_odd > 1.0 and a_odd > 1.0:
+                        seen_keys.add(pair_key)
+                        results.append(SportyBetFixtureOdds(
+                            home_team=home,
+                            away_team=away,
+                            league=league_name,
+                            odds_home=h_odd,
+                            odds_draw=d_odd,
+                            odds_away=a_odd,
+                            match_time=m_time_str,
+                            sporty_id=str(ev.get("eventId", "")),
+                            start_time_ts=st_ts,
+                            market_odds=m_odds
+                        ))
+        except Exception as e:
+            logger.debug(f"Error fetching SportyBet live events timeline=24: {e}")
+
+        # 2. Fetch upcoming events within 24h timeline (pages 1 to 4)
+        for page_num in range(1, 5):
             try:
                 url = f"{self.UPCOMING_EVENTS_BASE}&pageNum={page_num}&_t={timestamp}"
                 req = urllib.request.Request(
                     url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
                 )
                 with urllib.request.urlopen(req, timeout=8) as r:
                     data = json.loads(r.read().decode("utf-8"))
@@ -299,6 +364,13 @@ class SportyBetOddsScraper:
                         if pair_key in seen_keys:
                             continue
 
+                        est_start = int(ev.get("estimateStartTime") or 0)
+                        m_time_str, st_ts = _format_match_time(est_start)
+
+                        # Exclude matches ended >30m ago
+                        if st_ts > 0 and st_ts < (now_sec - 1800):
+                            continue
+
                         h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
 
                         if h_odd > 1.0 and a_odd > 1.0:
@@ -310,50 +382,61 @@ class SportyBetOddsScraper:
                                 odds_home=h_odd,
                                 odds_draw=d_odd,
                                 odds_away=a_odd,
+                                match_time=m_time_str,
                                 sporty_id=str(ev.get("eventId", "")),
+                                start_time_ts=st_ts,
                                 market_odds=m_odds
                             ))
             except Exception as e:
                 logger.debug(f"Error fetching SportyBet upcoming page {page_num}: {e}")
                 break
 
-        # 2. Also query live prematch events timeline=24 to ensure ongoing/in-play matches are captured
-        try:
-            live_url = f"https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&timeline=24&_t={timestamp}"
-            req = urllib.request.Request(
-                live_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            )
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode("utf-8"))
+        # 3. If under 50 fixtures, supplement with 48h timeline
+        if len(results) < 50:
+            try:
+                for page_num in range(1, 3):
+                    url = f"{self.UPCOMING_EVENTS_BASE.replace('timeline=24', 'timeline=48')}&pageNum={page_num}&_t={timestamp}"
+                    req = urllib.request.Request(
+                        url,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=8) as r:
+                        data = json.loads(r.read().decode("utf-8"))
+                    tournaments = data.get("data", {}).get("tournaments", [])
+                    if not tournaments:
+                        break
+                    for tourn in tournaments:
+                        league_name = tourn.get("name") or tourn.get("categoryName") or "Football"
+                        for ev in tourn.get("events", []):
+                            home = ev.get("homeTeamName")
+                            away = ev.get("awayTeamName")
+                            if not home or not away:
+                                continue
+                            pair_key = f"{home.lower()}_vs_{away.lower()}"
+                            if pair_key in seen_keys:
+                                continue
+                            est_start = int(ev.get("estimateStartTime") or 0)
+                            m_time_str, st_ts = _format_match_time(est_start)
+                            h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
+                            if h_odd > 1.0 and a_odd > 1.0:
+                                seen_keys.add(pair_key)
+                                results.append(SportyBetFixtureOdds(
+                                    home_team=home,
+                                    away_team=away,
+                                    league=league_name,
+                                    odds_home=h_odd,
+                                    odds_draw=d_odd,
+                                    odds_away=a_odd,
+                                    match_time=m_time_str,
+                                    sporty_id=str(ev.get("eventId", "")),
+                                    start_time_ts=st_ts,
+                                    market_odds=m_odds
+                                ))
+            except Exception as e:
+                logger.debug(f"Supplement 48h failed: {e}")
 
-            for group in data.get("data", []):
-                league_name = group.get("categoryName") or group.get("tournamentName") or "Football"
-                for ev in group.get("events", []):
-                    home = ev.get("homeTeamName")
-                    away = ev.get("awayTeamName")
-                    if not home or not away:
-                        continue
-                    pair_key = f"{home.lower()}_vs_{away.lower()}"
-                    if pair_key in seen_keys:
-                        continue
+        # Sort chronologically by start time: closest upcoming fixtures first!
+        results.sort(key=lambda x: (0 if x.start_time_ts > 0 else 1, x.start_time_ts if x.start_time_ts > 0 else 9999999999))
 
-                    h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
-
-                    if h_odd > 1.0 and a_odd > 1.0:
-                        seen_keys.add(pair_key)
-                        results.append(SportyBetFixtureOdds(
-                            home_team=home,
-                            away_team=away,
-                            league=league_name,
-                            odds_home=h_odd,
-                            odds_draw=d_odd,
-                            odds_away=a_odd,
-                            sporty_id=str(ev.get("eventId", "")),
-                            market_odds=m_odds
-                        ))
-        except Exception as e:
-            logger.debug(f"Error fetching SportyBet live events timeline=24: {e}")
-
-        logger.info(f"SportyBet API extraction completed: {len(results)} total fixtures with true odds.")
+        logger.info(f"SportyBet API extraction completed: {len(results)} near-term/today fixtures with true odds.")
         return results

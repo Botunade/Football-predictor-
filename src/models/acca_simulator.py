@@ -8,6 +8,7 @@ consensus intelligence, diversity constraints, and Expected Value (EV) maximizat
 import itertools
 import math
 import random
+import time
 from collections import Counter
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -32,10 +33,18 @@ class AccaSimulator:
         fixture_candidates = []
         seen_keys = set()
 
+        import time
+        now_ts = int(time.time())
+
         for f in self.fixtures:
             home = f.get("home_team", "").strip()
             away = f.get("away_team", "").strip()
             if not home or not away:
+                continue
+
+            # Skip matches that started more than 30 minutes ago
+            st = f.get("start_time_ts", 0)
+            if st > 0 and st < (now_ts - 1800):
                 continue
 
             pair_key = f"{home.lower()}_vs_{away.lower()}"
@@ -208,6 +217,8 @@ class AccaSimulator:
                 "odds_away": oa,
                 "market_odds": m_odds,
                 "sporty_id": f.get("sporty_id", ""),
+                "match_time": f.get("match_time", ""),
+                "start_time_ts": f.get("start_time_ts", 0),
                 "sources": f.get("sources", []),
                 "tip_info": f.get("predictz_tip") or f.get("forebet_score") or f.get("betensured_tip") or f.get("matchoutlook_tip") or f"AI Pick: {best_opt['selected_outcome']}",
                 "best_outcome": best_opt["selected_outcome"],
@@ -245,19 +256,30 @@ class AccaSimulator:
                 "candidates": []
             }
 
+        # Prioritize near-term fixtures starting TODAY and upcoming from the current time
+        now_ts = int(time.time())
+        near_term = [f for f in fixtures_pool if f.get("start_time_ts", 0) > 0 and (f.get("start_time_ts", 0) - now_ts) <= 36 * 3600]
+        if len(near_term) >= match_count:
+            fixtures_pool = near_term
+
         # Prioritize fixtures with verified SportyBet odds and strong data
         sporty_verified = [f for f in fixtures_pool if f.get("sporty_id")]
         if len(sporty_verified) >= match_count * 2:
             fixtures_pool = sporty_verified
 
-        # Sort fixtures by top option quality
-        fixtures_pool.sort(
-            key=lambda x: (
-                1 if "SportyBet" in x.get("sources", []) else 0,
-                x["options"][0]["score"] if x["options"] else 0.0
-            ),
-            reverse=True
-        )
+        # Sort candidate fixtures: matches starting TODAY and closest to current time first!
+        def candidate_sort_key(x):
+            st = x.get("start_time_ts", 0)
+            diff_h = (st - now_ts) / 3600.0 if st > 0 else 999.0
+            # Tier 0: within next 24 hours (Today / imminent from current time)
+            # Tier 1: within next 24-48 hours (Tomorrow)
+            # Tier 2: other dates
+            tier = 0 if (0 <= diff_h <= 24.0) else (1 if (0 <= diff_h <= 48.0) else 2)
+            score = x["options"][0]["score"] if x.get("options") else 0.0
+            is_sporty = 0 if "SportyBet" in x.get("sources", []) else 1
+            return (tier, is_sporty, st if st > 0 else 9999999999, -score)
+
+        fixtures_pool.sort(key=candidate_sort_key)
         pool = fixtures_pool[:max_candidates]
 
         # Target odds tolerance window [target * 0.78, target * 1.35]
@@ -344,6 +366,8 @@ class AccaSimulator:
                     "market_odds": f["market_odds"],
                     "sources": f["sources"],
                     "sporty_id": f["sporty_id"],
+                    "match_time": f.get("match_time", ""),
+                    "start_time_ts": f.get("start_time_ts", 0),
                     "tip_info": f["tip_info"]
                 })
 
@@ -411,6 +435,8 @@ class AccaSimulator:
                     "market_odds": f["market_odds"],
                     "sources": f["sources"],
                     "sporty_id": f["sporty_id"],
+                    "match_time": f.get("match_time", ""),
+                    "start_time_ts": f.get("start_time_ts", 0),
                     "tip_info": f["tip_info"]
                 })
 

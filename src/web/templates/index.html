@@ -314,11 +314,24 @@
                                 <span class="filter-badge" data-league="{{ l }}" onclick="filterByLeague('{{ l }}', this)">{{ l }}</span>
                                 {% endfor %}
                             </div>
-                            <div class="form-check form-switch ms-2 mb-0 d-flex align-items-center gap-1">
-                                <input class="form-check-input" type="checkbox" id="filterSportyOnly" checked onchange="filterFixtures()" style="cursor: pointer;">
-                                <label class="form-check-label text-success fw-bold small" for="filterSportyOnly">
-                                    <i class="bi bi-shield-check me-1"></i>SportyBet Real Odds Only
-                                </label>
+                            <div class="d-flex align-items-center gap-2 flex-wrap ms-2">
+                                <div class="btn-group btn-group-sm" role="group" id="timeFilterGroup">
+                                    <button type="button" class="btn btn-info active fw-bold py-0 px-2 text-dark" id="timeFilterToday" onclick="setTimeFilter('today')" title="Matches starting today or in the next few hours">
+                                        <i class="bi bi-clock-history me-1"></i>Today &amp; Imminent
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary fw-bold py-0 px-2" id="timeFilter24h" onclick="setTimeFilter('24h')" title="Matches starting within next 24 hours">
+                                        Next 24h
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary fw-bold py-0 px-2" id="timeFilterAll" onclick="setTimeFilter('all')" title="All scheduled fixtures">
+                                        All Games
+                                    </button>
+                                </div>
+                                <div class="form-check form-switch mb-0 d-flex align-items-center gap-1 ms-1">
+                                    <input class="form-check-input" type="checkbox" id="filterSportyOnly" checked onchange="filterFixtures()" style="cursor: pointer;">
+                                    <label class="form-check-label text-success fw-bold small" for="filterSportyOnly">
+                                        <i class="bi bi-shield-check me-1"></i>SportyBet Real Odds Only
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -340,12 +353,17 @@
                         <tbody id="fixtureTableBody">
                             {% for f in scraped_fixtures %}
                             {% set mo = f.market_odds if f.market_odds else {} %}
-                            <tr class="fixture-row" data-id="{{ f.id }}" data-sporty-id="{{ f.sporty_id or '' }}" data-league="{{ f.league }}" data-home="{{ f.home_team }}" data-away="{{ f.away_team }}" data-rec="{{ f.recommended_outcome }}" data-sporty="{{ 'true' if 'SportyBet' in f.sources else 'false' }}">
+                            <tr class="fixture-row" data-id="{{ f.id }}" data-sporty-id="{{ f.sporty_id or '' }}" data-league="{{ f.league }}" data-home="{{ f.home_team }}" data-away="{{ f.away_team }}" data-rec="{{ f.recommended_outcome }}" data-sporty="{{ 'true' if 'SportyBet' in f.sources else 'false' }}" data-time="{{ f.match_time or '' }}" data-start-ts="{{ f.start_time_ts or 0 }}">
                                 <td class="text-center">
                                     <input type="checkbox" class="form-check-input fixture-checkbox" value="{{ f.id }}" onchange="updateSelectionBar()" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
                                 </td>
                                 <td>
-                                    <div class="fw-bold text-white fs-6">{{ f.home_team }} <span class="text-secondary fw-normal">vs</span> {{ f.away_team }}</div>
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
+                                        <div class="fw-bold text-white fs-6">{{ f.home_team }} <span class="text-secondary fw-normal">vs</span> {{ f.away_team }}</div>
+                                        {% if f.match_time %}
+                                            <span class="badge bg-dark border border-info text-info small"><i class="bi bi-clock me-1"></i>{{ f.match_time }}</span>
+                                        {% endif %}
+                                    </div>
                                     <div class="small mt-1 d-flex gap-1 flex-wrap align-items-center">
                                         {% for s in f.sources %}
                                             {% if s == 'SportyBet' %}<span class="source-pill pill-sporty"><i class="bi bi-broadcast me-1"></i>SportyBet Live</span>
@@ -1466,23 +1484,47 @@
         }
 
         let activeLeague = 'ALL';
+        let activeTimeFilter = 'today';
+
+        function setTimeFilter(filter) {
+            activeTimeFilter = filter;
+            const btnToday = document.getElementById('timeFilterToday');
+            const btn24h = document.getElementById('timeFilter24h');
+            const btnAll = document.getElementById('timeFilterAll');
+            if (btnToday) btnToday.className = filter === 'today' ? 'btn btn-info active fw-bold py-0 px-2 text-dark' : 'btn btn-outline-secondary fw-bold py-0 px-2';
+            if (btn24h) btn24h.className = filter === '24h' ? 'btn btn-info active fw-bold py-0 px-2 text-dark' : 'btn btn-outline-secondary fw-bold py-0 px-2';
+            if (btnAll) btnAll.className = filter === 'all' ? 'btn btn-info active fw-bold py-0 px-2 text-dark' : 'btn btn-outline-secondary fw-bold py-0 px-2';
+            filterFixtures();
+        }
 
         function filterFixtures() {
             const query = (document.getElementById('fixtureSearch') ? document.getElementById('fixtureSearch').value : '').toLowerCase().trim();
             const sportyOnly = document.getElementById('filterSportyOnly') ? document.getElementById('filterSportyOnly').checked : false;
             const rows = document.querySelectorAll('.fixture-row');
+            const nowSec = Math.floor(Date.now() / 1000);
 
             rows.forEach(r => {
                 const home = (r.getAttribute('data-home') || '').toLowerCase();
                 const away = (r.getAttribute('data-away') || '').toLowerCase();
                 const league = (r.getAttribute('data-league') || '').toLowerCase();
                 const isSporty = r.getAttribute('data-sporty') === 'true';
+                const timeStr = r.getAttribute('data-time') || '';
+                const startTs = parseInt(r.getAttribute('data-start-ts') || '0');
 
                 const matchesQuery = (!query || home.includes(query) || away.includes(query) || league.includes(query));
                 const matchesSporty = (!sportyOnly || isSporty);
                 const matchesLeague = (activeLeague === 'ALL' || league === activeLeague.toLowerCase());
 
-                if (matchesQuery && matchesSporty && matchesLeague) {
+                let matchesTime = true;
+                if (activeTimeFilter === 'today') {
+                    const diffH = startTs > 0 ? (startTs - nowSec) / 3600.0 : 999;
+                    matchesTime = (timeStr.includes('Today') || (diffH >= -0.5 && diffH <= 18.0) || (!startTs && timeStr));
+                } else if (activeTimeFilter === '24h') {
+                    const diffH = startTs > 0 ? (startTs - nowSec) / 3600.0 : 999;
+                    matchesTime = (timeStr.includes('Today') || timeStr.includes('Tomorrow') || (diffH >= -0.5 && diffH <= 24.0));
+                }
+
+                if (matchesQuery && matchesSporty && matchesLeague && matchesTime) {
                     r.style.display = '';
                 } else {
                     r.style.display = 'none';
@@ -1942,7 +1984,7 @@
                         <td class="text-secondary fw-bold">${idx + 1}</td>
                         <td>
                             <strong class="text-white">${m.home_team}</strong> <span class="text-secondary">vs</span> <strong class="text-white">${m.away_team}</strong>
-                            <div class="small mt-1">${sources}</div>
+                            <div class="small mt-1 d-flex align-items-center gap-1 flex-wrap">${sources} ${m.match_time ? `<span class="badge bg-dark border border-info text-info small"><i class="bi bi-clock me-1"></i>${m.match_time}</span>` : ''}</div>
                         </td>
                         <td><span class="badge bg-dark border border-secondary">${m.league}</span></td>
                         <td><span class="badge bg-primary px-2 py-1 fw-bold"><i class="bi bi-stars me-1"></i>${m.selected_outcome}</span></td>

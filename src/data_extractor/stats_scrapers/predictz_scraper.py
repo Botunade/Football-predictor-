@@ -53,6 +53,8 @@ class PredictZScraper:
     """
 
     DEFAULT_LEAGUE_URLS = [
+        ("Today's Matches", "https://www.predictz.com/predictions/today/"),
+        ("Tomorrow's Matches", "https://www.predictz.com/predictions/tomorrow/"),
         ("Premier League", "https://www.predictz.com/predictions/england/premier-league/"),
         ("Champions League", "https://www.predictz.com/predictions/champions-league/"),
         ("Europa League", "https://www.predictz.com/predictions/europa-league/"),
