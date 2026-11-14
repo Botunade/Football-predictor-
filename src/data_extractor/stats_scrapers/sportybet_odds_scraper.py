@@ -55,7 +55,7 @@ class SportyBetOddsScraper:
         "https://www.sportybet.com/api/ng/factsCenter/pcUpcomingEvents?"
         "sportId=sr%3Asport%3A1&"
         "marketId=1%2C18%2C10%2C29%2C11%2C26%2C19%2C20%2C31%2C32%2C50%2C51%2C60%2C63%2C64%2C68%2C75%2C83%2C85%2C86%2C90%2C95%2C548%2C60100%2C60200&"
-        "timeline=24&pageSize=100&option=1"
+        "pageSize=100&option=1"
     )
 
     def __init__(self, headless: bool = True, timeout: int = 40000):
@@ -270,6 +270,8 @@ class SportyBetOddsScraper:
         """
         import time
         from datetime import datetime
+        from concurrent.futures import ThreadPoolExecutor
+
         results: List[SportyBetFixtureOdds] = []
         seen_keys = set()
         timestamp = int(time.time() * 1000)
@@ -291,18 +293,55 @@ class SportyBetOddsScraper:
             except Exception:
                 return "", ts_sec
 
-        # 1. Fetch live and imminent pre-match events (timeline=24) first
-        try:
-            live_url = f"https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&timeline=24&_t={timestamp}"
-            req = urllib.request.Request(
-                live_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode("utf-8"))
+        # Construct comprehensive endpoint list across major and lower leagues:
+        # 1. Live and imminent pre-match events
+        urls = [
+            f"https://www.sportybet.com/api/ng/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&timeline=24&_t={timestamp}"
+        ]
 
-            for group in data.get("data", []):
-                league_name = group.get("categoryName") or group.get("tournamentName") or "Football"
+        # 2. Upcoming matches today (timeline=24, pages 1 to 7)
+        for p in range(1, 8):
+            urls.append(f"{self.UPCOMING_EVENTS_BASE}&timeline=24&pageNum={p}&_t={timestamp}")
+
+        # 3. Upcoming matches next 48h (timeline=48, pages 1 to 5)
+        for p in range(1, 6):
+            urls.append(f"{self.UPCOMING_EVENTS_BASE}&timeline=48&pageNum={p}&_t={timestamp}")
+
+        # 4. General lower leagues & regional tournaments (pages 1 to 6)
+        for p in range(1, 7):
+            urls.append(f"{self.UPCOMING_EVENTS_BASE}&pageNum={p}&_t={timestamp}")
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json"
+        }
+
+        def fetch_payload(url: str) -> Optional[Dict[str, Any]]:
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    return json.loads(r.read().decode("utf-8"))
+            except Exception:
+                return None
+
+        # Fetch all pages concurrently with ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            payloads = list(executor.map(fetch_payload, urls))
+
+        for data in payloads:
+            if not data:
+                continue
+            raw_data = data.get("data")
+            groups = raw_data if isinstance(raw_data, list) else (raw_data.get("tournaments", []) if isinstance(raw_data, dict) else [])
+
+            for group in groups:
+                cat = (group.get("categoryName") or "").strip()
+                t_name = (group.get("name") or group.get("tournamentName") or "Football").strip()
+                if cat and cat.lower() not in t_name.lower() and cat not in ["International", "World"]:
+                    league_name = f"{cat} - {t_name}"
+                else:
+                    league_name = t_name
+
                 for ev in group.get("events", []):
                     home = ev.get("homeTeamName")
                     away = ev.get("awayTeamName")
@@ -315,11 +354,12 @@ class SportyBetOddsScraper:
                     est_start = int(ev.get("estimateStartTime") or 0)
                     m_time_str, st_ts = _format_match_time(est_start)
 
-                    # Exclude matches ended >30m ago
+                    # Exclude matches that started >30m ago
                     if st_ts > 0 and st_ts < (now_sec - 1800):
                         continue
 
                     h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
+
                     if h_odd > 1.0 and a_odd > 1.0:
                         seen_keys.add(pair_key)
                         results.append(SportyBetFixtureOdds(
@@ -334,109 +374,9 @@ class SportyBetOddsScraper:
                             start_time_ts=st_ts,
                             market_odds=m_odds
                         ))
-        except Exception as e:
-            logger.debug(f"Error fetching SportyBet live events timeline=24: {e}")
-
-        # 2. Fetch upcoming events within 24h timeline (pages 1 to 4)
-        for page_num in range(1, 5):
-            try:
-                url = f"{self.UPCOMING_EVENTS_BASE}&pageNum={page_num}&_t={timestamp}"
-                req = urllib.request.Request(
-                    url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=8) as r:
-                    data = json.loads(r.read().decode("utf-8"))
-
-                tournaments = data.get("data", {}).get("tournaments", [])
-                if not tournaments:
-                    break
-
-                for tourn in tournaments:
-                    league_name = tourn.get("name") or tourn.get("categoryName") or "Football"
-                    for ev in tourn.get("events", []):
-                        home = ev.get("homeTeamName")
-                        away = ev.get("awayTeamName")
-                        if not home or not away:
-                            continue
-
-                        pair_key = f"{home.lower()}_vs_{away.lower()}"
-                        if pair_key in seen_keys:
-                            continue
-
-                        est_start = int(ev.get("estimateStartTime") or 0)
-                        m_time_str, st_ts = _format_match_time(est_start)
-
-                        # Exclude matches ended >30m ago
-                        if st_ts > 0 and st_ts < (now_sec - 1800):
-                            continue
-
-                        h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
-
-                        if h_odd > 1.0 and a_odd > 1.0:
-                            seen_keys.add(pair_key)
-                            results.append(SportyBetFixtureOdds(
-                                home_team=home,
-                                away_team=away,
-                                league=league_name,
-                                odds_home=h_odd,
-                                odds_draw=d_odd,
-                                odds_away=a_odd,
-                                match_time=m_time_str,
-                                sporty_id=str(ev.get("eventId", "")),
-                                start_time_ts=st_ts,
-                                market_odds=m_odds
-                            ))
-            except Exception as e:
-                logger.debug(f"Error fetching SportyBet upcoming page {page_num}: {e}")
-                break
-
-        # 3. If under 50 fixtures, supplement with 48h timeline
-        if len(results) < 50:
-            try:
-                for page_num in range(1, 3):
-                    url = f"{self.UPCOMING_EVENTS_BASE.replace('timeline=24', 'timeline=48')}&pageNum={page_num}&_t={timestamp}"
-                    req = urllib.request.Request(
-                        url,
-                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json"}
-                    )
-                    with urllib.request.urlopen(req, timeout=8) as r:
-                        data = json.loads(r.read().decode("utf-8"))
-                    tournaments = data.get("data", {}).get("tournaments", [])
-                    if not tournaments:
-                        break
-                    for tourn in tournaments:
-                        league_name = tourn.get("name") or tourn.get("categoryName") or "Football"
-                        for ev in tourn.get("events", []):
-                            home = ev.get("homeTeamName")
-                            away = ev.get("awayTeamName")
-                            if not home or not away:
-                                continue
-                            pair_key = f"{home.lower()}_vs_{away.lower()}"
-                            if pair_key in seen_keys:
-                                continue
-                            est_start = int(ev.get("estimateStartTime") or 0)
-                            m_time_str, st_ts = _format_match_time(est_start)
-                            h_odd, d_odd, a_odd, m_odds = self._parse_event_markets(ev)
-                            if h_odd > 1.0 and a_odd > 1.0:
-                                seen_keys.add(pair_key)
-                                results.append(SportyBetFixtureOdds(
-                                    home_team=home,
-                                    away_team=away,
-                                    league=league_name,
-                                    odds_home=h_odd,
-                                    odds_draw=d_odd,
-                                    odds_away=a_odd,
-                                    match_time=m_time_str,
-                                    sporty_id=str(ev.get("eventId", "")),
-                                    start_time_ts=st_ts,
-                                    market_odds=m_odds
-                                ))
-            except Exception as e:
-                logger.debug(f"Supplement 48h failed: {e}")
 
         # Sort chronologically by start time: closest upcoming fixtures first!
         results.sort(key=lambda x: (0 if x.start_time_ts > 0 else 1, x.start_time_ts if x.start_time_ts > 0 else 9999999999))
 
-        logger.info(f"SportyBet API extraction completed: {len(results)} near-term/today fixtures with true odds.")
+        logger.info(f"SportyBet high-scale API extraction completed: {len(results)} total fixtures across major & lower leagues.")
         return results

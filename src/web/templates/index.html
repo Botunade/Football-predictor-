@@ -307,14 +307,20 @@
                         </div>
                     </div>
                     <div class="col-md-7">
-                        <div class="d-flex flex-wrap gap-1 align-items-center justify-content-between" style="max-height: 80px; overflow-y: auto;">
-                            <div class="d-flex flex-wrap gap-1 align-items-center">
-                                <span class="filter-badge active" data-league="ALL" onclick="filterByLeague('ALL', this)">All Leagues</span>
-                                {% for l in leagues[:10] %}
+                        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+                            <div class="d-flex align-items-center gap-1 flex-wrap">
+                                <select id="leagueSelectDropdown" class="form-select form-select-sm bg-dark border-secondary text-white fw-bold py-1" style="max-width: 220px;" onchange="filterByLeague(this.value, null)">
+                                    <option value="ALL">All Leagues ({{ leagues|length }})</option>
+                                    {% for l in leagues %}
+                                    <option value="{{ l }}">{{ l }}</option>
+                                    {% endfor %}
+                                </select>
+                                <span class="filter-badge active" data-league="ALL" onclick="filterByLeague('ALL', this)">All</span>
+                                {% for l in leagues[:5] %}
                                 <span class="filter-badge" data-league="{{ l }}" onclick="filterByLeague('{{ l }}', this)">{{ l }}</span>
                                 {% endfor %}
                             </div>
-                            <div class="d-flex align-items-center gap-2 flex-wrap ms-2">
+                            <div class="d-flex align-items-center gap-2 flex-wrap ms-auto">
                                 <div class="btn-group btn-group-sm" role="group" id="timeFilterGroup">
                                     <button type="button" class="btn btn-info active fw-bold py-0 px-2 text-dark" id="timeFilterToday" onclick="setTimeFilter('today')" title="Matches starting today or in the next few hours">
                                         <i class="bi bi-clock-history me-1"></i>Today &amp; Imminent
@@ -1534,7 +1540,14 @@
 
         function filterByLeague(league, el) {
             document.querySelectorAll('.filter-badge').forEach(b => b.classList.remove('active'));
-            if (el) el.classList.add('active');
+            if (el) {
+                el.classList.add('active');
+            } else {
+                const matchBadge = document.querySelector(`.filter-badge[data-league="${league}"]`);
+                if (matchBadge) matchBadge.classList.add('active');
+            }
+            const dropdown = document.getElementById('leagueSelectDropdown');
+            if (dropdown && dropdown.value !== league) dropdown.value = league;
             activeLeague = league;
             filterFixtures();
         }
