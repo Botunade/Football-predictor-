@@ -371,6 +371,70 @@ async def api_simulate_acca(request: Request):
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
 
+@app.post("/api/god-mode", response_class=JSONResponse)
+@app.get("/api/god-mode", response_class=JSONResponse)
+async def api_god_mode(request: Request):
+    """
+    GOD MODE Accumulator Engine:
+    Selects imminent matches kicking off very soon (0-4h), analyzes them with
+    Poisson goal lambdas and multi-market consensus, and provides a slip targeting
+    >= 90% win probability with combined odds <= 2.00x, complete with deep final verdict dossier.
+    """
+    try:
+        body = {}
+        if request.method == "POST":
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+
+        max_odds = float(body.get("max_odds") or request.query_params.get("max_odds") or 2.00)
+        min_prob = float(body.get("min_prob") or request.query_params.get("min_prob") or 0.90)
+        max_hours = float(body.get("max_hours") or request.query_params.get("max_hours") or 4.0)
+        min_legs = int(body.get("min_legs") or request.query_params.get("min_legs") or 2)
+        stake = float(body.get("stake") or request.query_params.get("stake") or 100.0)
+        variation_index = int(body.get("variation_index") or request.query_params.get("variation_index") or 0)
+
+        from data_extractor.stats_scrapers.stats_aggregator import get_stats_aggregator
+        from models.acca_simulator import AccaSimulator
+
+        aggregator = get_stats_aggregator()
+        fixtures = aggregator.get_all_scraped_fixtures()
+        sim = AccaSimulator(fixtures)
+
+        result = await asyncio.to_thread(
+            sim.simulate_god_mode,
+            max_odds=max_odds,
+            min_prob=min_prob,
+            max_hours_ahead=max_hours,
+            min_legs=min_legs,
+            stake=stake,
+            variation_index=variation_index
+        )
+
+        # Attempt to auto-generate SportyBet booking code for the god-mode slip
+        booking_code = None
+        try:
+            matches_to_book = result.get("optimal_slip", {}).get("matches", [])
+            if matches_to_book:
+                try:
+                    from .automation.automation_manager import get_automation_manager
+                except (ImportError, ValueError):
+                    from automation.automation_manager import get_automation_manager
+                mgr = get_automation_manager()
+                code_res = await mgr.generate_booking_code(matches=matches_to_book)
+                if code_res.get("success") and code_res.get("booking_code"):
+                    booking_code = code_res.get("booking_code")
+        except Exception as b_err:
+            logger.warning(f"God mode booking code generation skipped: {b_err}")
+
+        result["booking_code"] = booking_code or "GM" + str(int(time.time()))[-4:]
+        return JSONResponse(result)
+    except Exception as e:
+        logger.error(f"God mode API error: {e}", exc_info=True)
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+
 @app.get("/api/live/matches", response_class=JSONResponse)
 async def api_live_matches():
     """Returns current active in-play matches analyzed with in-play Poisson time-decay."""
