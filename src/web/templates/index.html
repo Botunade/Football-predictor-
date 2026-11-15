@@ -4,226 +4,354 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SportyBet Predictor V5 - Market-Calibrated Football Intelligence Terminal</title>
+    <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5.3 & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <style>
+        :root {
+            --bg-base: #060913;
+            --bg-surface: rgba(14, 21, 38, 0.78);
+            --bg-surface-elevated: rgba(22, 33, 58, 0.82);
+            --bg-surface-hover: rgba(30, 45, 78, 0.55);
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-focus: rgba(56, 189, 248, 0.6);
+            --border-glow: 0 0 20px rgba(56, 189, 248, 0.25);
+            
+            --neon-cyan: #38bdf8;
+            --neon-blue: #3b82f6;
+            --neon-emerald: #10b981;
+            --neon-amber: #f59e0b;
+            --neon-purple: #a855f7;
+            --neon-rose: #f43f5e;
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-dim: #64748b;
+        }
+
+        /* Ambient Cyber-Mesh Dark Background */
+        body {
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(circle at 12% 10%, rgba(56, 189, 248, 0.09) 0%, transparent 40%),
+                radial-gradient(circle at 88% 15%, rgba(168, 85, 247, 0.08) 0%, transparent 42%),
+                radial-gradient(circle at 50% 60%, rgba(16, 185, 129, 0.04) 0%, transparent 48%),
+                radial-gradient(circle at 80% 90%, rgba(245, 158, 11, 0.05) 0%, transparent 38%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            letter-spacing: -0.012em;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Monospace Accents for Numbers, Odds, Scores & Codes */
+        .font-mono, .odds-mini-input, .live-score-badge, .metric-number, .booking-code-text, #liveModalCode, #gmBookingCode {
+            font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
+        }
+
+        /* Modern Glass Sticky Navbar */
+        .navbar-custom {
+            background: rgba(9, 14, 26, 0.82);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-subtle);
+            position: sticky;
+            top: 0;
+            z-index: 1040;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+        }
+
+        /* Cyber Glass Cards */
+        .card-custom {
+            background: var(--bg-surface);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            box-shadow: 0 12px 35px -6px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+        }
+        .card-custom:hover {
+            border-color: rgba(56, 189, 248, 0.3);
+            box-shadow: 0 16px 45px -6px rgba(0, 0, 0, 0.65), 0 0 25px rgba(56, 189, 248, 0.1);
+        }
+
+        /* Sleek Modern Pill Tabs */
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-secondary);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 10px 18px;
+            font-weight: 600;
+            font-size: 0.88rem;
+            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+            margin-bottom: 6px;
+        }
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.16);
+            transform: translateY(-1px);
+        }
+        .tab-btn.active {
+            color: var(--neon-cyan);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(59, 130, 246, 0.10) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
+        }
+
+        /* Glowing Pulse Animations */
         @keyframes pulseGold {
             0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+            70% { box-shadow: 0 0 0 12px rgba(245, 158, 11, 0); }
             100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
         }
         .animate-pulse-gold {
             animation: pulseGold 2.2s infinite;
         }
-        :root {
-            --bg-dark: #0b0f19;
-            --surface-card: #131b2e;
-            --surface-hover: #1c2742;
-            --border-color: #233152;
-            --accent-primary: #3b82f6;
-            --accent-success: #10b981;
-            --accent-purple: #8b5cf6;
-            --accent-amber: #f59e0b;
-            --accent-cyan: #06b6d4;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+
+        @keyframes pulseRed {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.8); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 9px rgba(244, 63, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+        }
+        .live-dot-pulse {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--neon-rose);
+            border-radius: 50%;
+            animation: pulseRed 1.6s infinite;
+            vertical-align: middle;
         }
 
-        body {
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            min-height: 100vh;
-        }
-
-        .navbar-custom {
-            background: linear-gradient(180deg, #162038 0%, #0e1526 100%);
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .card-custom {
-            background-color: var(--surface-card);
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-        }
-
-        .tab-btn {
-            background: transparent;
-            color: var(--text-muted);
-            border: none;
-            border-bottom: 3px solid transparent;
-            padding: 12px 20px;
+        /* High-Tech Filter Badges */
+        .filter-badge {
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-subtle);
+            cursor: pointer;
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 0.82rem;
             font-weight: 600;
             transition: all 0.2s ease;
         }
-
-        .tab-btn.active {
-            color: #60a5fa;
-            border-bottom: 3px solid #60a5fa;
-            background: rgba(59, 130, 246, 0.06);
+        .filter-badge:hover {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--neon-cyan);
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: translateY(-1px);
+        }
+        .filter-badge.active {
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+            color: white;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
         }
 
+        /* Source Tag Pills */
         .source-pill {
-            font-size: 0.72rem;
-            font-weight: 700;
+            font-size: 0.70rem;
+            font-weight: 800;
             padding: 3px 8px;
             border-radius: 6px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.6px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
         }
-        .pill-forebet { background: #0284c7; color: white; }
-        .pill-predictz { background: #d97706; color: white; }
-        .pill-outlook { background: #7c3aed; color: white; }
-        .pill-scoregpt { background: #db2777; color: white; }
-        .pill-betensured { background: #059669; color: white; }
-        .pill-sporty { background: #ef4444; color: white; font-weight: 800; letter-spacing: 0.5px; }
+        .pill-forebet { background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; }
+        .pill-predictz { background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: white; }
+        .pill-outlook { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); color: white; }
+        .pill-scoregpt { background: linear-gradient(135deg, #db2777 0%, #be185d 100%); color: white; }
+        .pill-betensured { background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white; }
+        .pill-sporty { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; font-weight: 900; }
 
+        /* Sleek Fixture Rows */
         .fixture-row {
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            transition: background 0.15s ease;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.18s ease;
+            border-left: 3px solid transparent;
         }
         .fixture-row:hover {
-            background: var(--surface-hover);
+            background: rgba(30, 41, 59, 0.45);
+            border-left-color: rgba(56, 189, 248, 0.6);
+            transform: translateX(3px);
         }
         .fixture-row.selected {
-            background: rgba(59, 130, 246, 0.12);
-            border-left: 4px solid var(--accent-primary);
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.14) 0%, rgba(30, 41, 59, 0.25) 100%);
+            border-left: 3px solid var(--neon-cyan);
         }
 
+        /* Floating Futuristic Action Bar */
         .floating-action-bar {
             position: fixed;
             bottom: 24px;
             left: 50%;
             transform: translateX(-50%);
-            background: #1e293b;
-            border: 1px solid #3b82f6;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+            background: rgba(14, 21, 38, 0.94);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(56, 189, 248, 0.5);
+            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.85), 0 0 28px rgba(56, 189, 248, 0.35);
             border-radius: 50px;
             padding: 12px 28px;
             z-index: 1050;
             display: none;
             align-items: center;
             gap: 16px;
-            animation: slideUp 0.2s ease forwards;
+            animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-
         @keyframes slideUp {
             from { bottom: 0px; opacity: 0; }
             to { bottom: 24px; opacity: 1; }
         }
 
+        /* Odds Inputs */
         .odds-mini-input {
-            width: 60px;
-            background: #0f172a;
-            border: 1px solid var(--border-color);
-            color: #38bdf8;
-            font-weight: 600;
+            width: 62px;
+            background: rgba(10, 15, 28, 0.85);
+            border: 1px solid var(--border-subtle);
+            color: var(--neon-cyan);
+            font-weight: 700;
             text-align: center;
-            border-radius: 6px;
-            padding: 4px;
+            border-radius: 8px;
+            padding: 5px;
             font-size: 0.85rem;
+            transition: all 0.2s ease;
         }
         .odds-mini-input:focus {
             outline: none;
-            border-color: #38bdf8;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+            background: rgba(15, 23, 42, 0.95);
         }
 
-        .filter-badge {
-            background: #1e293b;
-            color: #cbd5e1;
-            border: 1px solid var(--border-color);
-            cursor: pointer;
-            padding: 5px 12px;
+        /* Form Controls & Select Inputs */
+        .form-control, .form-select {
+            background-color: rgba(15, 23, 42, 0.8) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #f8fafc !important;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: rgba(15, 23, 42, 0.95) !important;
+            border-color: var(--neon-cyan) !important;
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
+        }
+
+        /* Live Match Cards */
+        .live-match-card {
+            background: rgba(14, 21, 38, 0.72);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 14px;
+            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        .live-match-card:hover {
+            border-color: rgba(244, 63, 94, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(244, 63, 94, 0.15);
+            transform: translateY(-2px);
+        }
+        .live-match-card.selected-live {
+            border-color: var(--neon-emerald);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(14, 21, 38, 0.85) 100%);
+            box-shadow: 0 0 22px rgba(16, 185, 129, 0.22);
+        }
+
+        /* Live Score & Clock Badges */
+        .live-score-badge {
+            background: rgba(10, 15, 29, 0.9);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--neon-cyan);
+            font-size: 1.15rem;
+            font-weight: 800;
+            padding: 5px 14px;
+            border-radius: 10px;
+            letter-spacing: 1px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+        }
+        .live-clock-pill {
+            background: rgba(244, 63, 94, 0.16);
+            border: 1px solid var(--neon-rose);
+            color: #fecdd3;
+            font-size: 0.76rem;
+            font-weight: 800;
+            padding: 4px 12px;
             border-radius: 20px;
-            font-size: 0.85rem;
-            transition: all 0.15s ease;
-        }
-        .filter-badge.active, .filter-badge:hover {
-            background: #3b82f6;
-            color: white;
-            border-color: #3b82f6;
+            letter-spacing: 0.5px;
         }
 
+        /* Live Slip Bar */
+        .live-slip-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(10, 15, 28, 0.95);
+            backdrop-filter: blur(20px);
+            border-top: 2px solid var(--neon-rose);
+            box-shadow: 0 -12px 35px rgba(0, 0, 0, 0.8), 0 0 25px rgba(244, 63, 94, 0.2);
+            padding: 14px 24px;
+            z-index: 1060;
+            display: none;
+            animation: slideUp 0.25s ease forwards;
+        }
+
+        /* Loading Overlay with Frosted Glass */
         .loading-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(11, 15, 25, 0.85);
-            backdrop-filter: blur(5px);
+            background: rgba(6, 9, 19, 0.88);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             z-index: 9999;
             flex-direction: column;
             align-items: center;
             justify-content: center;
         }
 
-        .live-dot-pulse {
-            display: inline-block;
-            width: 9px;
-            height: 9px;
-            background-color: #ef4444;
-            border-radius: 50%;
-            box-shadow: 0 0 0 rgba(239, 68, 68, 0.7);
-            animation: pulseRed 1.6s infinite;
+        /* Custom Sleek Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
         }
-        @keyframes pulseRed {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        ::-webkit-scrollbar-track {
+            background: #060913;
         }
-
-        .live-match-card {
-            background: #111827;
-            border: 1px solid #1f2e4d;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 14px;
-            transition: all 0.2s ease;
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 6px;
+            border: 2px solid #060913;
         }
-        .live-match-card:hover {
-            border-color: #ef4444;
-            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.12);
-        }
-        .live-match-card.selected-live {
-            border-color: #10b981;
-            background: rgba(16, 185, 129, 0.05);
-            box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--neon-cyan);
         }
 
-        .live-score-badge {
-            background: #0f172a;
-            border: 1px solid #334155;
-            color: #38bdf8;
-            font-size: 1.15rem;
-            font-weight: 800;
-            padding: 4px 12px;
-            border-radius: 8px;
-            letter-spacing: 1px;
+        /* Glowing Accent Utilities */
+        .border-glow-cyan {
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
         }
-
-        .live-clock-pill {
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid #ef4444;
-            color: #fca5a5;
-            font-size: 0.78rem;
-            font-weight: 700;
-            padding: 3px 10px;
-            border-radius: 20px;
+        .border-glow-gold {
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
         }
-
-        .live-slip-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(180deg, #162038 0%, #0d1424 100%);
-            border-top: 2px solid #ef4444;
-            box-shadow: 0 -10px 30px rgba(0,0,0,0.7);
-            padding: 14px 24px;
-            z-index: 1060;
-            display: none;
-            animation: slideUp 0.25s ease forwards;
+        .text-glow-cyan {
+            text-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
         }
     </style>
 </head>
@@ -231,7 +359,7 @@
 
     <!-- Loading Modal Overlay -->
     <div id="loadingOverlay" class="loading-overlay">
-        <div class="spinner-border text-primary mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+        <div class="spinner-border text-info mb-3" style="width: 3.5rem; height: 3.5rem; border-width: 0.3rem;" role="status"></div>
         <h4 id="loadingTitle" class="fw-bold text-white mb-1">Analyzing Fixtures...</h4>
         <p id="loadingSubtitle" class="text-secondary small">Running Poisson Matrix, 5-Source Consensus & 2-Way AI Verification</p>
     </div>
@@ -241,34 +369,37 @@
         <div class="container">
             <div class="d-flex align-items-center justify-content-between w-100 flex-wrap gap-2">
                 <div class="d-flex align-items-center gap-3">
-                    <div class="p-2 rounded-3 bg-primary text-white">
+                    <div class="p-2 rounded-3 text-white" style="background: linear-gradient(135deg, #0284c7 0%, #3b82f6 100%); box-shadow: 0 0 16px rgba(56, 189, 248, 0.45);">
                         <i class="bi bi-graph-up-arrow fs-4"></i>
                     </div>
                     <div>
-                        <h4 class="fw-bold mb-0 text-white tracking-wide">SportyBet Intelligence <span class="badge bg-primary fs-6 py-1 px-2">V5</span></h4>
-                        <div class="small text-muted">Bivariate Dixon-Coles, Platt-Calibrated Probabilities & EV Engine</div>
+                        <h4 class="fw-bold mb-0 text-white tracking-wide d-flex align-items-center gap-2">
+                            <span>SportyBet Intelligence</span>
+                            <span class="badge fs-6 py-1 px-2" style="background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%); color: #070b14; font-weight: 800;">V5</span>
+                        </h4>
+                        <div class="small" style="color: #94a3b8; font-size: 0.78rem;">Bivariate Dixon-Coles • Platt-Calibrated • EV Maximizer</div>
                     </div>
                 </div>
 
-                <div class="d-flex align-items-center gap-2">
-                    <div class="badge bg-dark border border-success px-3 py-2 text-white d-flex align-items-center gap-2 shadow-sm">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <div class="badge px-3 py-2 text-white d-flex align-items-center gap-2 shadow-sm" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px;">
                         <i class="bi bi-wallet2 text-success fs-6"></i>
-                        <span>SportyBet: <strong class="text-white" id="navSportyUser">815****422</strong> | <strong class="text-success fs-6" id="navSportyBalance">NGN 70.93</strong></span>
+                        <span>SportyBet: <strong class="text-white" id="navSportyUser">815****422</strong> | <strong class="text-success fs-6 font-mono" id="navSportyBalance">NGN 70.93</strong></span>
                         <button class="btn btn-link text-success p-0 ms-1" onclick="refreshGlobalSportyBalance(true)" title="Fetch live balance from SportyBet" style="text-decoration: none;">
                             <i class="bi bi-arrow-clockwise" id="navBalIcon"></i>
                         </button>
                     </div>
-                    <button class="btn btn-outline-info btn-sm fw-bold px-3 py-2 shadow-sm d-flex align-items-center gap-1" onclick="openModalById('v5ComparisonModal')" title="Compare V4 vs V5 Mathematical & Engineering Advantages">
+                    <button class="btn btn-outline-info btn-sm fw-bold px-3 py-2 shadow-sm d-flex align-items-center gap-1" onclick="openModalById('v5ComparisonModal')" title="Compare V4 vs V5 Mathematical & Engineering Advantages" style="border-radius: 10px; border-color: rgba(56, 189, 248, 0.4);">
                         <i class="bi bi-diagram-3-fill"></i>
                         <span>⚖️ V4 vs V5</span>
                     </button>
-                    <span class="badge bg-dark border border-secondary px-3 py-2 text-info">
+                    <span class="badge px-3 py-2 text-info shadow-sm" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;">
                         <i class="bi bi-cloud-check-fill text-success me-1"></i> 5 Scrapers
                     </span>
-                    <span id="aiStatusBadge" class="badge bg-dark border border-secondary px-3 py-2 shadow-sm" style="color: #c084fc;" title="Checking 9Router port 20128...">
+                    <span id="aiStatusBadge" class="badge px-3 py-2 shadow-sm" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(192, 132, 252, 0.35); color: #c084fc; border-radius: 10px;" title="Checking 9Router port 20128...">
                         <i class="bi bi-cpu-fill text-warning me-1" id="aiStatusIcon"></i> <span id="aiStatusLabel">9Router Checking...</span>
                     </span>
-                    <button class="btn btn-warning btn-sm fw-bold px-3 py-2 shadow-sm d-flex align-items-center gap-1 text-dark border-0 animate-pulse-gold" onclick="openGodModeModal()" style="background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); cursor: pointer;" title="Select imminent games kicking off soon with 90%+ win prob at <= 2.00x odds">
+                    <button class="btn btn-sm fw-bold px-3 py-2 shadow-sm d-flex align-items-center gap-1 text-dark border-0 animate-pulse-gold" onclick="openGodModeModal()" style="background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); cursor: pointer; border-radius: 10px;" title="Select imminent games kicking off soon with 90%+ win prob at <= 2.00x odds">
                         <i class="bi bi-lightning-charge-fill text-dark"></i>
                         <span>⚡ GOD MODE</span>
                         <span class="badge bg-black text-warning ms-1" style="font-size: 0.68rem;">90% Win Prob</span>
@@ -282,7 +413,7 @@
     <div class="container py-4">
 
         <!-- Navigation Tabs -->
-        <div class="d-flex border-bottom border-secondary mb-4 gap-2">
+        <div class="d-flex flex-wrap align-items-center mb-4 gap-2 pb-2" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
             <button class="tab-btn active" id="tabScrapedBtn" onclick="switchTab('scraped')">
                 <i class="bi bi-collection-play-fill me-1 text-primary"></i> Live Scraped Games Catalog ({{ total_scraped }})
             </button>
