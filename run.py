@@ -41,10 +41,11 @@ if __name__ == "__main__":
         ai_status_msg = f"STANDBY (Local Dixon-Coles Quant Active)"
 
     print("\n" + "=" * 65)
-    print("  🚀 MULTI-SPORT PREDICTOR V4 - LOCAL ENGINE RUNNING")
+    print("  🚀 SPORTYBET PREDICTOR V5 - MARKET-CALIBRATED QUANT TERMINAL")
     print("  🌐 Access the Dashboard at: http://127.0.0.1:8000")
     print("  ⚡ Windows Proactor EventLoop: ACTIVE (Playwright ready)")
     print(f"  🧠 9Router AI Port 20128: {ai_status_msg}")
+    print("  📊 Bivariate Dixon-Coles & Platt Calibration: ACTIVE")
     print("  🔒 Press Ctrl+C in this PowerShell window to stop")
     print("=" * 65 + "\n")
 

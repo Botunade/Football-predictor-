@@ -5,11 +5,14 @@ Simple web app for interacting with the prediction pipeline
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # Enforce Windows Proactor Loop & Silence Transport Deallocator Bug
 if sys.platform == "win32":
