@@ -402,15 +402,57 @@ async def api_god_mode(request: Request):
         fixtures = aggregator.get_all_scraped_fixtures()
         sim = AccaSimulator(fixtures)
 
-        result = await asyncio.to_thread(
-            sim.simulate_god_mode,
-            max_odds=max_odds,
-            min_prob=min_prob,
-            max_hours_ahead=max_hours,
-            min_legs=min_legs,
-            stake=stake,
-            variation_index=variation_index
-        )
+        # Attempt V5 Calibrated Decision Engine first
+        result = None
+        try:
+            from models.v5_decision_engine import get_decision_engine
+            engine = get_decision_engine(fixtures)
+            v5_res = await asyncio.to_thread(
+                engine.scan_god_mode_opportunities,
+                max_odds=max_odds,
+                min_prob_target=min_prob,
+                max_hours_ahead=max_hours,
+                min_legs=min_legs,
+                bankroll=1000.0,
+                variation_index=variation_index
+            )
+            if v5_res.get("success") and v5_res.get("optimal_slip"):
+                result = v5_res
+        except Exception as v5_err:
+            logger.warning(f"V5 decision engine fallback: {v5_err}")
+
+        if not result:
+            result = await asyncio.to_thread(
+                sim.simulate_god_mode,
+                max_odds=max_odds,
+                min_prob=min_prob,
+                max_hours_ahead=max_hours,
+                min_legs=min_legs,
+                stake=stake,
+                variation_index=variation_index
+            )
+
+        # Auto-log predictions into V5 Monitoring framework
+        try:
+            from models.v5_monitoring import get_model_monitor
+            monitor = get_model_monitor()
+            for m in result.get("optimal_slip", {}).get("matches", []):
+                monitor.log_prediction(
+                    fixture_name=f"{m.get('home_team')} vs {m.get('away_team')}",
+                    league=m.get('league', 'Football'),
+                    league_tier=m.get('league_tier', 'Tier A'),
+                    market_name=m.get('category', 'goals'),
+                    selection=m.get('selected_outcome', ''),
+                    raw_prob=float(m.get('win_prob', 90.0)) / 100.0,
+                    calibrated_prob=float(m.get('calibrated_prob') or m.get('win_prob', 90.0)) / 100.0,
+                    market_prob=1.0 / max(1.01, float(m.get('selected_odds', 1.20))),
+                    taken_odds=float(m.get('selected_odds', 1.20)),
+                    expected_value=float(m.get('ev_pct', 2.0)) / 100.0,
+                    uncertainty_score=float(m.get('uncertainty_score', 2.5)),
+                    mode="PAPER"
+                )
+        except Exception as log_err:
+            logger.debug(f"V5 prediction logging: {log_err}")
 
         # Attempt to auto-generate SportyBet booking code for the god-mode slip
         booking_code = None
@@ -432,6 +474,19 @@ async def api_god_mode(request: Request):
         return JSONResponse(result)
     except Exception as e:
         logger.error(f"God mode API error: {e}", exc_info=True)
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+
+@app.get("/api/v5/model-intelligence", response_class=JSONResponse)
+async def api_v5_model_intelligence():
+    """Returns V5 quantitative validation metrics, Brier scores, Log Loss, CLV, and calibration curves."""
+    try:
+        from models.v5_monitoring import get_model_monitor
+        monitor = get_model_monitor()
+        summary = monitor.get_model_intelligence_summary()
+        return JSONResponse({"success": True, "data": summary})
+    except Exception as e:
+        logger.error(f"V5 model intelligence error: {e}")
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
 
